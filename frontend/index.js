@@ -11,17 +11,15 @@ import {
   Loader,
   Link,
   Icon,
-  SelectButtons,
   colors,
 } from "@airtable/blocks/ui";
-import { unstable_fetchAsync } from "@airtable/blocks";
 import React, { useState, useCallback, useEffect, useRef } from "react";
 
 // ---------------------------------------------------------------------------
 // Exa API
 // ---------------------------------------------------------------------------
 
-const EXA_API = "https://api.exa.ai";
+const PROXY_URL = "https://localhost:9005";
 const INTEGRATION = "airtable";
 const BATCH_DELAY = 250;
 
@@ -34,20 +32,15 @@ function exaHeaders(apiKey) {
 }
 
 async function exaFetch(method, endpoint, apiKey, body) {
-  const hdrs = exaHeaders(apiKey);
-  const requestJson = {
-    method,
-    url: `${EXA_API}${endpoint}`,
-    headers: Object.entries(hdrs),
-    body: body ? JSON.stringify(body) : null,
-    redirect: "error",
-    integrity: null,
-  };
-  const res = await unstable_fetchAsync(requestJson);
-  if (res.status < 200 || res.status >= 300) {
-    throw new Error(`Exa ${endpoint} ${res.status}: ${res.body}`);
+  const url = `${PROXY_URL}/proxy${endpoint}`;
+  const opts = { method, headers: exaHeaders(apiKey) };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(url, opts);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Exa ${endpoint} ${res.status}: ${text}`);
   }
-  return JSON.parse(res.body);
+  return res.json();
 }
 
 function exaPost(endpoint, body, apiKey) {
@@ -326,8 +319,8 @@ function ProgressBar({ current, total, label }) {
 function CreateWebTable({ apiKey, onBack }) {
   const base = useBase();
   const [query, setQuery] = useState("");
-  const [numResults, setNumResults] = useState(15);
-  const [category, setCategory] = useState("company");
+  const numResults = 15;
+  const category = "company";
   const [rows, setRows] = useState([]);
   const [columns, setColumns] = useState([]);
   const [visibleCount, setVisibleCount] = useState(0);
@@ -336,6 +329,7 @@ function CreateWebTable({ apiKey, onBack }) {
   const [phase, setPhase] = useState("input");
   const [tableName, setTableName] = useState("");
   const revealTimer = useRef(null);
+  const [searchStatus, setSearchStatus] = useState("");
 
   useEffect(() => {
     if (phase !== "results" || !rows.length) return;
@@ -348,6 +342,28 @@ function CreateWebTable({ apiKey, onBack }) {
     }, 80);
     return () => clearInterval(revealTimer.current);
   }, [phase, rows]);
+
+  // Rotate status messages while searching
+  useEffect(() => {
+    if (phase !== "searching") {
+      setSearchStatus("");
+      return;
+    }
+    const messages = [
+      "Searching the web...",
+      "Reading and analyzing sources...",
+      "Extracting entities...",
+      "Enriching with details...",
+      "Almost there...",
+    ];
+    let idx = 0;
+    setSearchStatus(messages[0]);
+    const timer = setInterval(() => {
+      idx = Math.min(idx + 1, messages.length - 1);
+      setSearchStatus(messages[idx]);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [phase]);
 
   const search = useCallback(async () => {
     setLoading(true);
@@ -464,39 +480,14 @@ function CreateWebTable({ apiKey, onBack }) {
         marginBottom={2}
       />
 
-      <Label htmlFor="category-select">Category filter</Label>
-      <SelectButtons
-        id="category-select"
-        value={category}
-        onChange={(v) => setCategory(v)}
-        options={[
-          { value: "company", label: "Companies" },
-          { value: "news", label: "News" },
-          { value: "research paper", label: "Research" },
-          { value: "tweet", label: "Tweets" },
-          { value: "none", label: "Any" },
-        ]}
-        marginBottom={2}
-        width="100%"
-      />
-
-      <Label htmlFor="num-input">Number of results</Label>
-      <Input
-        id="num-input"
-        type="number"
-        value={String(numResults)}
-        onChange={(e) => setNumResults(parseInt(e.target.value) || 10)}
-        marginBottom={2}
-        width="80px"
-      />
-
       <Button
         variant="primary"
         onClick={search}
         disabled={!query.trim() || loading}
         marginBottom={2}
+        width="100%"
       >
-        {loading ? <Loader scale={0.2} /> : "Search the Web"}
+        {loading ? "Searching..." : "Search the Web"}
       </Button>
 
       {error && (
@@ -516,7 +507,7 @@ function CreateWebTable({ apiKey, onBack }) {
             <Box display="flex" alignItems="center" marginBottom={1}>
               <Loader scale={0.3} />
               <Text marginLeft={2} textColor="light" fontSize="13px">
-                Deep searching the web with Exa...
+                {searchStatus || "Searching..."}
               </Text>
             </Box>
           )}
@@ -525,7 +516,7 @@ function CreateWebTable({ apiKey, onBack }) {
             border="default"
             borderRadius="default"
             overflow="auto"
-            maxHeight="400px"
+            maxHeight="600px"
             marginBottom={2}
             style={{ background: "#fff" }}
           >
