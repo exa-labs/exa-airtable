@@ -13,6 +13,7 @@ import {
     Icon,
     colors,
 } from '@airtable/blocks/ui';
+import {unstable_fetchAsync} from '@airtable/blocks';
 import React, {useState, useCallback} from 'react';
 
 // ---------------------------------------------------------------------------
@@ -31,10 +32,13 @@ function exaHeaders(apiKey) {
     };
 }
 
+const PROXY_URL = 'https://localhost:9005';
+
 async function exaFetch(method, endpoint, apiKey, body) {
+    const url = `${PROXY_URL}/proxy${endpoint}`;
     const opts = {method, headers: exaHeaders(apiKey)};
     if (body) opts.body = JSON.stringify(body);
-    const res = await fetch(`${EXA_API}${endpoint}`, opts);
+    const res = await fetch(url, opts);
     if (!res.ok) {
         const text = await res.text();
         throw new Error(`Exa ${endpoint} ${res.status}: ${text}`);
