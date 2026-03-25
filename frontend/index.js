@@ -15,7 +15,7 @@ import {
   colors,
 } from "@airtable/blocks/ui";
 import { unstable_fetchAsync } from "@airtable/blocks";
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 
 // ---------------------------------------------------------------------------
 // Exa API
@@ -330,22 +330,38 @@ function CreateWebTable({ apiKey, onBack }) {
   const [category, setCategory] = useState("company");
   const [rows, setRows] = useState([]);
   const [columns, setColumns] = useState([]);
+  const [visibleCount, setVisibleCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [phase, setPhase] = useState("input");
   const [tableName, setTableName] = useState("");
+  const revealTimer = useRef(null);
+
+  useEffect(() => {
+    if (phase !== "results" || !rows.length) return;
+    setVisibleCount(0);
+    let i = 0;
+    revealTimer.current = setInterval(() => {
+      i += 1;
+      setVisibleCount(i);
+      if (i >= rows.length) clearInterval(revealTimer.current);
+    }, 80);
+    return () => clearInterval(revealTimer.current);
+  }, [phase, rows]);
 
   const search = useCallback(async () => {
     setLoading(true);
     setError(null);
     setRows([]);
     setColumns([]);
-    setPhase("input");
+    setVisibleCount(0);
+    const schemaKey = category === "none" ? "none" : category;
+    const fieldDefs = TABLE_FIELDS[schemaKey] || TABLE_FIELDS.none;
+    setColumns(fieldDefs);
+    setPhase("searching");
 
     try {
-      const schemaKey = category === "none" ? "none" : category;
       const schema = buildOutputSchema(schemaKey, numResults);
-      const fieldDefs = TABLE_FIELDS[schemaKey] || TABLE_FIELDS.none;
 
       const searchResult = await exaSearch(query, apiKey, {
         numResults: Math.max(numResults * 2, 20),
@@ -366,16 +382,19 @@ function CreateWebTable({ apiKey, onBack }) {
       }
       if (!items.length) {
         setError("No results found. Try a different query.");
+        setPhase("input");
+        setColumns([]);
         setLoading(false);
         return;
       }
 
-      setColumns(fieldDefs);
       setRows(items);
       setPhase("results");
       setTableName(query.slice(0, 50));
     } catch (err) {
       setError(err.message);
+      setPhase("input");
+      setColumns([]);
     }
     setLoading(false);
   }, [query, numResults, category, apiKey]);
@@ -432,7 +451,8 @@ function CreateWebTable({ apiKey, onBack }) {
         🌐 Create a Web Table
       </Heading>
       <Text textColor="light" marginBottom={2}>
-        Exa will search the web to find data and populate it in a new table.
+        Exa will search the web to find companies and enrich them with leadership, headcount, funding, news, and
+        more.
       </Text>
 
       <Label htmlFor="query-input">What are you looking for?</Label>
@@ -479,78 +499,181 @@ function CreateWebTable({ apiKey, onBack }) {
         {loading ? <Loader scale={0.2} /> : "Search the Web"}
       </Button>
 
-      {loading && (
-        <Box display="flex" alignItems="center" marginBottom={2}>
-          <Loader scale={0.3} />
-          <Text marginLeft={2} textColor="light">
-            Deep searching the web with Exa...
-          </Text>
-        </Box>
-      )}
-
       {error && (
         <Box padding={2} borderRadius="default" backgroundColor="#FEE2E2" marginBottom={2}>
           <Text textColor="#991B1B">{error}</Text>
         </Box>
       )}
 
-      {phase === "results" && rows.length > 0 && (
+      {(phase === "searching" || phase === "results") && columns.length > 0 && (
         <Box marginTop={2}>
-          <Heading size="xsmall" marginBottom={1}>
-            Found {rows.length} results
-          </Heading>
+          {phase === "results" && (
+            <Heading size="xsmall" marginBottom={1}>
+              Found {rows.length} results
+            </Heading>
+          )}
+          {phase === "searching" && (
+            <Box display="flex" alignItems="center" marginBottom={1}>
+              <Loader scale={0.3} />
+              <Text marginLeft={2} textColor="light" fontSize="13px">
+                Deep searching the web with Exa...
+              </Text>
+            </Box>
+          )}
 
           <Box
             border="default"
             borderRadius="default"
             overflow="auto"
-            maxHeight="300px"
+            maxHeight="400px"
             marginBottom={2}
+            style={{ background: "#fff" }}
           >
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: "12px",
+                tableLayout: "auto",
+              }}
+            >
               <thead>
-                <tr style={{ borderBottom: "1px solid #ddd", background: "#f9f9f9" }}>
+                <tr
+                  style={{
+                    borderBottom: "2px solid #e0e0e0",
+                    background: "#f5f5f5",
+                    position: "sticky",
+                    top: 0,
+                    zIndex: 1,
+                  }}
+                >
+                  <th
+                    style={{
+                      padding: "8px 10px",
+                      textAlign: "center",
+                      width: "36px",
+                      color: "#999",
+                      fontWeight: "normal",
+                      borderRight: "1px solid #e0e0e0",
+                    }}
+                  >
+                    #
+                  </th>
                   {columns.map((col) => (
-                    <th key={col.key} style={{ padding: "6px 8px", textAlign: "left" }}>
+                    <th
+                      key={col.key}
+                      style={{
+                        padding: "8px 10px",
+                        textAlign: "left",
+                        fontWeight: 600,
+                        fontSize: "11px",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                        color: "#444",
+                        borderRight: "1px solid #eee",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
                       {col.name}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, i) => (
-                  <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
-                    {columns.map((col) => (
-                      <td key={col.key} style={{ padding: "6px 8px", maxWidth: "200px" }}>
-                        {col.type === "url" ? (
-                          <Link href={row[col.key]} target="_blank" style={{ fontSize: "11px" }}>
-                            {String(row[col.key] || "")
-                              .replace(/https?:\/\/(www\.)?/, "")
-                              .slice(0, 30)}
-                          </Link>
-                        ) : (
-                          <Text fontSize="11px">{String(row[col.key] ?? "").slice(0, 120)}</Text>
-                        )}
+                {phase === "searching" &&
+                  Array.from({ length: Math.min(numResults, 8) }).map((_, i) => (
+                    <tr key={`skel-${i}`} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                      <td
+                        style={{
+                          padding: "10px 10px",
+                          textAlign: "center",
+                          color: "#ccc",
+                          borderRight: "1px solid #f0f0f0",
+                        }}
+                      >
+                        {i + 1}
                       </td>
-                    ))}
-                  </tr>
-                ))}
+                      {columns.map((col) => (
+                        <td key={col.key} style={{ padding: "10px" }}>
+                          <Box
+                            height="12px"
+                            borderRadius="default"
+                            backgroundColor={colors.GRAY_LIGHT_2}
+                            style={{
+                              width: `${50 + Math.random() * 40}%`,
+                              animation: "pulse 1.5s ease-in-out infinite",
+                              opacity: 1 - i * 0.08,
+                            }}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                {phase === "results" &&
+                  rows.slice(0, visibleCount).map((row, i) => (
+                    <tr
+                      key={i}
+                      style={{
+                        borderBottom: "1px solid #f0f0f0",
+                        background: i % 2 === 0 ? "#fff" : "#fafafa",
+                        transition: "opacity 0.2s",
+                      }}
+                    >
+                      <td
+                        style={{
+                          padding: "8px 10px",
+                          textAlign: "center",
+                          color: "#999",
+                          fontSize: "11px",
+                          borderRight: "1px solid #f0f0f0",
+                        }}
+                      >
+                        {i + 1}
+                      </td>
+                      {columns.map((col) => (
+                        <td
+                          key={col.key}
+                          style={{
+                            padding: "8px 10px",
+                            maxWidth: "200px",
+                            borderRight: "1px solid #f0f0f0",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                        >
+                          {col.type === "url" ? (
+                            <Link href={row[col.key]} target="_blank" style={{ fontSize: "12px" }}>
+                              {String(row[col.key] || "")
+                                .replace(/https?:\/\/(www\.)?/, "")
+                                .slice(0, 30)}
+                            </Link>
+                          ) : (
+                            <Text fontSize="12px">
+                              {String(row[col.key] ?? "").slice(0, 120)}
+                            </Text>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </Box>
 
-          <Box display="flex" alignItems="center">
-            <Input
-              placeholder="Table name"
-              value={tableName}
-              onChange={(e) => setTableName(e.target.value)}
-              flex={1}
-              marginRight={1}
-            />
-            <Button variant="primary" onClick={writeToBase} disabled={loading}>
-              Create Table
-            </Button>
-          </Box>
+          {phase === "results" && visibleCount >= rows.length && (
+            <Box display="flex" alignItems="center">
+              <Input
+                placeholder="Table name"
+                value={tableName}
+                onChange={(e) => setTableName(e.target.value)}
+                flex={1}
+                marginRight={1}
+              />
+              <Button variant="primary" onClick={writeToBase} disabled={loading}>
+                Create Table
+              </Button>
+            </Box>
+          )}
         </Box>
       )}
 
