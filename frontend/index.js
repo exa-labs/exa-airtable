@@ -576,182 +576,188 @@ function CreateWebTable({ apiKey, onBack }) {
 
       {(phase === "searching" || phase === "enriching" || phase === "results") &&
         columns.length > 0 && (
-        <Box marginTop={2}>
-          {(phase === "results" || phase === "enriching") && rows.length > 0 && (
-            <Heading size="xsmall" marginBottom={1}>
-              Found {rows.length} results{enriching ? " — enriching..." : ""}
-            </Heading>
-          )}
-          {phase === "searching" && (
-            <Box display="flex" alignItems="center" marginBottom={1}>
-              <Loader scale={0.3} />
-              <Text marginLeft={2} textColor="light" fontSize="13px">
-                Searching the web with Exa...
-              </Text>
-            </Box>
-          )}
-          {enriching && (
-            <Box display="flex" alignItems="center" marginBottom={1}>
-              <Loader scale={0.3} />
-              <Text marginLeft={2} textColor="light" fontSize="13px">
-                Enriching with deep search...
-              </Text>
-            </Box>
-          )}
+          <Box marginTop={2}>
+            {(phase === "results" || phase === "enriching") && rows.length > 0 && (
+              <Heading size="xsmall" marginBottom={1}>
+                Found {rows.length} results{enriching ? " — enriching..." : ""}
+              </Heading>
+            )}
+            {phase === "searching" && (
+              <Box display="flex" alignItems="center" marginBottom={1}>
+                <Loader scale={0.3} />
+                <Text marginLeft={2} textColor="light" fontSize="13px">
+                  Searching the web with Exa...
+                </Text>
+              </Box>
+            )}
+            {enriching && (
+              <Box display="flex" alignItems="center" marginBottom={1}>
+                <Loader scale={0.3} />
+                <Text marginLeft={2} textColor="light" fontSize="13px">
+                  Enriching with deep search...
+                </Text>
+              </Box>
+            )}
 
-          <Box
-            border="default"
-            borderRadius="default"
-            overflow="auto"
-            maxHeight="400px"
-            marginBottom={2}
-            style={{ background: "#fff" }}
-          >
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontSize: "12px",
-                tableLayout: "auto",
-              }}
+            <Box
+              border="default"
+              borderRadius="default"
+              overflow="auto"
+              maxHeight="400px"
+              marginBottom={2}
+              style={{ background: "#fff" }}
             >
-              <thead>
-                <tr
-                  style={{
-                    borderBottom: "2px solid #e0e0e0",
-                    background: "#f5f5f5",
-                    position: "sticky",
-                    top: 0,
-                    zIndex: 1,
-                  }}
-                >
-                  <th
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: "12px",
+                  tableLayout: "auto",
+                }}
+              >
+                <thead>
+                  <tr
                     style={{
-                      padding: "8px 10px",
-                      textAlign: "center",
-                      width: "36px",
-                      color: "#999",
-                      fontWeight: "normal",
-                      borderRight: "1px solid #e0e0e0",
+                      borderBottom: "2px solid #e0e0e0",
+                      background: "#f5f5f5",
+                      position: "sticky",
+                      top: 0,
+                      zIndex: 1,
                     }}
                   >
-                    #
-                  </th>
-                  {columns.map((col) => (
                     <th
-                      key={col.key}
                       style={{
                         padding: "8px 10px",
-                        textAlign: "left",
-                        fontWeight: 600,
-                        fontSize: "11px",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.5px",
-                        color: "#444",
-                        borderRight: "1px solid #eee",
-                        whiteSpace: "nowrap",
+                        textAlign: "center",
+                        width: "36px",
+                        color: "#999",
+                        fontWeight: "normal",
+                        borderRight: "1px solid #e0e0e0",
                       }}
                     >
-                      {col.name}
+                      #
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {phase === "searching" &&
-                  Array.from({ length: Math.min(numResults, 8) }).map((_, i) => (
-                    <tr key={`skel-${i}`} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                      <td
-                        style={{
-                          padding: "10px 10px",
-                          textAlign: "center",
-                          color: "#ccc",
-                          borderRight: "1px solid #f0f0f0",
-                        }}
-                      >
-                        {i + 1}
-                      </td>
-                      {columns.map((col) => (
-                        <td key={col.key} style={{ padding: "10px" }}>
-                          <Box
-                            height="12px"
-                            borderRadius="default"
-                            backgroundColor={colors.GRAY_LIGHT_2}
-                            style={{
-                              width: `${50 + Math.random() * 40}%`,
-                              animation: "pulse 1.5s ease-in-out infinite",
-                              opacity: 1 - i * 0.08,
-                            }}
-                          />
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                {(phase === "results" || phase === "enriching") &&
-                  rows.slice(0, visibleCount).map((row, i) => (
-                    <tr
-                      key={i}
-                      style={{
-                        borderBottom: "1px solid #f0f0f0",
-                        background: i % 2 === 0 ? "#fff" : "#fafafa",
-                        transition: "opacity 0.2s",
-                      }}
-                    >
-                      <td
+                    {columns.map((col) => (
+                      <th
+                        key={col.key}
                         style={{
                           padding: "8px 10px",
-                          textAlign: "center",
-                          color: "#999",
+                          textAlign: "left",
+                          fontWeight: 600,
                           fontSize: "11px",
-                          borderRight: "1px solid #f0f0f0",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                          color: "#444",
+                          borderRight: "1px solid #eee",
+                          whiteSpace: "nowrap",
                         }}
                       >
-                        {i + 1}
-                      </td>
-                      {columns.map((col) => (
+                        {col.name}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {phase === "searching" &&
+                    Array.from({ length: Math.min(numResults, 8) }).map((_, i) => (
+                      <tr key={`skel-${i}`} style={{ borderBottom: "1px solid #f0f0f0" }}>
                         <td
-                          key={col.key}
                           style={{
-                            padding: "8px 10px",
-                            maxWidth: "200px",
+                            padding: "10px 10px",
+                            textAlign: "center",
+                            color: "#ccc",
                             borderRight: "1px solid #f0f0f0",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
                           }}
                         >
-                          {col.type === "url" ? (
-                            <Link href={row[col.key]} target="_blank" style={{ fontSize: "12px" }}>
-                              {String(row[col.key] || "")
-                                .replace(/https?:\/\/(www\.)?/, "")
-                                .slice(0, 30)}
-                            </Link>
-                          ) : (
-                            <Text fontSize="12px">{String(row[col.key] ?? "").slice(0, 120)}</Text>
-                          )}
+                          {i + 1}
                         </td>
-                      ))}
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </Box>
-
-          {(phase === "results" || phase === "enriching") && visibleCount >= rows.length && (
-            <Box display="flex" alignItems="center">
-              <Input
-                placeholder="Table name"
-                value={tableName}
-                onChange={(e) => setTableName(e.target.value)}
-                flex={1}
-                marginRight={1}
-              />
-              <Button variant="primary" onClick={writeToBase} disabled={loading}>
-                Create Table
-              </Button>
+                        {columns.map((col) => (
+                          <td key={col.key} style={{ padding: "10px" }}>
+                            <Box
+                              height="12px"
+                              borderRadius="default"
+                              backgroundColor={colors.GRAY_LIGHT_2}
+                              style={{
+                                width: `${50 + Math.random() * 40}%`,
+                                animation: "pulse 1.5s ease-in-out infinite",
+                                opacity: 1 - i * 0.08,
+                              }}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  {(phase === "results" || phase === "enriching") &&
+                    rows.slice(0, visibleCount).map((row, i) => (
+                      <tr
+                        key={i}
+                        style={{
+                          borderBottom: "1px solid #f0f0f0",
+                          background: i % 2 === 0 ? "#fff" : "#fafafa",
+                          transition: "opacity 0.2s",
+                        }}
+                      >
+                        <td
+                          style={{
+                            padding: "8px 10px",
+                            textAlign: "center",
+                            color: "#999",
+                            fontSize: "11px",
+                            borderRight: "1px solid #f0f0f0",
+                          }}
+                        >
+                          {i + 1}
+                        </td>
+                        {columns.map((col) => (
+                          <td
+                            key={col.key}
+                            style={{
+                              padding: "8px 10px",
+                              maxWidth: "200px",
+                              borderRight: "1px solid #f0f0f0",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {col.type === "url" ? (
+                              <Link
+                                href={row[col.key]}
+                                target="_blank"
+                                style={{ fontSize: "12px" }}
+                              >
+                                {String(row[col.key] || "")
+                                  .replace(/https?:\/\/(www\.)?/, "")
+                                  .slice(0, 30)}
+                              </Link>
+                            ) : (
+                              <Text fontSize="12px">
+                                {String(row[col.key] ?? "").slice(0, 120)}
+                              </Text>
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
             </Box>
-          )}
-        </Box>
-      )}
+
+            {(phase === "results" || phase === "enriching") && visibleCount >= rows.length && (
+              <Box display="flex" alignItems="center">
+                <Input
+                  placeholder="Table name"
+                  value={tableName}
+                  onChange={(e) => setTableName(e.target.value)}
+                  flex={1}
+                  marginRight={1}
+                />
+                <Button variant="primary" onClick={writeToBase} disabled={loading}>
+                  Create Table
+                </Button>
+              </Box>
+            )}
+          </Box>
+        )}
 
       {phase === "done" && (
         <Box padding={2} borderRadius="default" backgroundColor="#D1FAE5" marginTop={2}>
