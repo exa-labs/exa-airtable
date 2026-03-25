@@ -90,7 +90,8 @@ const OUTPUT_SCHEMAS = {
           properties: {
             name: { type: "string" },
             website: { type: "string" },
-            description: { type: "string" },
+            short_description: { type: "string" },
+            category: { type: "string" },
             headquarters: { type: "string" },
             founded_year: { type: "number" },
             employee_count: { type: "number" },
@@ -175,8 +176,9 @@ const OUTPUT_SCHEMAS = {
 const TABLE_FIELDS = {
   company: [
     { name: "Name", type: "singleLineText", key: "name" },
+    { name: "Short Description", type: "singleLineText", key: "short_description" },
+    { name: "Category", type: "singleLineText", key: "category" },
     { name: "Website", type: "url", key: "website" },
-    { name: "Description", type: "multilineText", key: "description" },
     { name: "Headquarters", type: "singleLineText", key: "headquarters" },
     { name: "Founded", type: "number", key: "founded_year", options: { precision: 0 } },
     { name: "Employees", type: "number", key: "employee_count", options: { precision: 0 } },
@@ -361,7 +363,7 @@ function ProgressBar({ current, total, label }) {
 function CreateWebTable({ apiKey, onBack }) {
   const base = useBase();
   const [query, setQuery] = useState("");
-  const [numResults, setNumResults] = useState(10);
+  const [numResults, setNumResults] = useState(15);
   const [category, setCategory] = useState("company");
   const [rows, setRows] = useState([]);
   const [columns, setColumns] = useState([]);
@@ -389,7 +391,16 @@ function CreateWebTable({ apiKey, onBack }) {
         outputSchema: schema,
       });
 
-      const items = searchResult.output?.content?.results || [];
+      const content = searchResult.output?.content;
+      let items = [];
+      if (Array.isArray(content?.results)) {
+        items = content.results;
+      } else if (Array.isArray(content)) {
+        items = content;
+      } else if (content && typeof content === "object") {
+        const firstArray = Object.values(content).find(Array.isArray);
+        if (firstArray) items = firstArray;
+      }
       if (!items.length) {
         setError("No results found. Try a different query.");
         setLoading(false);
