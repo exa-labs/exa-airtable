@@ -430,11 +430,22 @@ function CreateWebTable({ apiKey, onBack }) {
       setEnriching(true);
 
       // Phase 2: Deep search with outputSchema for enrichment
+      // Pass domains from Phase 1 so the deep search enriches the same entities
+      const domains = [];
+      for (const r of fastResults) {
+        try {
+          const host = new URL(r.url).hostname.replace("www.", "");
+          if (host && !domains.includes(host)) domains.push(host);
+        } catch (_e) {
+          /* skip bad URLs */
+        }
+      }
       const schema = buildOutputSchema(schemaKey, numResults);
       const deepResult = await exaSearch(query, apiKey, {
         numResults: Math.max(numResults * 2, 20),
         type: "deep",
         ...(category !== "none" && { category }),
+        ...(domains.length > 0 && { includeDomains: domains }),
         outputSchema: schema,
       });
 
