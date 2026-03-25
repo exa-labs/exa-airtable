@@ -1,0 +1,19 @@
+{
+    "name": "exa-airtable",
+    "version": "0.1.0",
+    "description": "Exa web intelligence extension for Airtable",
+    "scripts": {
+        "lint": "ESLINT_USE_FLAT_CONFIG=false eslint frontend"
+    },
+    "dependencies": {
+        "@airtable/blocks": "latest",
+        "react": "^16.14.0",
+        "react-dom": "^16.14.0"
+    },
+    "devDependencies": {
+        "eslint": "^9.5.0",
+        "eslint-plugin-react": "^7.34.2",
+        "eslint-plugin-react-hooks": "^4.6.2"
+    },
+    "license": "MIT"
+}
