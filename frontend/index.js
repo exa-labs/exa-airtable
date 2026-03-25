@@ -332,13 +332,18 @@ function CreateWebTable({ apiKey, onBack }) {
   const [columns, setColumns] = useState([]);
   const [visibleCount, setVisibleCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [enriching, setEnriching] = useState(false);
   const [error, setError] = useState(null);
   const [phase, setPhase] = useState("input");
   const [tableName, setTableName] = useState("");
   const revealTimer = useRef(null);
 
   useEffect(() => {
-    if (phase !== "results" || !rows.length) return;
+    if ((phase !== "results" && phase !== "enriching") || !rows.length) return;
+    if (visibleCount >= rows.length) {
+      setVisibleCount(rows.length);
+      return;
+    }
     setVisibleCount(0);
     let i = 0;
     revealTimer.current = setInterval(() => {
@@ -347,10 +352,11 @@ function CreateWebTable({ apiKey, onBack }) {
       if (i >= rows.length) clearInterval(revealTimer.current);
     }, 80);
     return () => clearInterval(revealTimer.current);
-  }, [phase, rows]);
+  }, [phase, rows.length]);
 
   const search = useCallback(async () => {
     setLoading(true);
+    setEnriching(false);
     setError(null);
     setRows([]);
     setColumns([]);
@@ -361,26 +367,15 @@ function CreateWebTable({ apiKey, onBack }) {
     setPhase("searching");
 
     try {
-      const schema = buildOutputSchema(schemaKey, numResults);
-
-      const searchResult = await exaSearch(query, apiKey, {
-        numResults: Math.max(numResults * 2, 20),
-        type: "deep",
+      // Phase 1: Fast search to get titles/URLs quickly
+      const fastResult = await exaSearch(query, apiKey, {
+        numResults,
+        type: "auto",
         ...(category !== "none" && { category }),
-        outputSchema: schema,
       });
 
-      const content = searchResult.output?.content;
-      let items = [];
-      if (Array.isArray(content?.results)) {
-        items = content.results;
-      } else if (Array.isArray(content)) {
-        items = content;
-      } else if (content && typeof content === "object") {
-        const firstArray = Object.values(content).find(Array.isArray);
-        if (firstArray) items = firstArray;
-      }
-      if (!items.length) {
+      const fastResults = fastResult.results || [];
+      if (!fastResults.length) {
         setError("No results found. Try a different query.");
         setPhase("input");
         setColumns([]);
@@ -388,13 +383,87 @@ function CreateWebTable({ apiKey, onBack }) {
         return;
       }
 
-      setRows(items);
-      setPhase("results");
+      // Build initial rows from fast results
+      const initialRows = fastResults.map((r) => {
+        const row = {};
+        for (const col of fieldDefs) {
+          row[col.key] = null;
+        }
+        // Fill what we know from the fast search
+        if (row.hasOwnProperty("name")) row.name = r.title || "";
+        if (row.hasOwnProperty("title")) row.title = r.title || "";
+        if (row.hasOwnProperty("author")) row.author = r.author || "";
+        if (row.hasOwnProperty("website")) row.website = r.url || "";
+        if (row.hasOwnProperty("url")) row.url = r.url || "";
+        if (row.hasOwnProperty("short_description") && r.highlights?.length) {
+          row.short_description = r.highlights[0].slice(0, 200);
+        }
+        if (row.hasOwnProperty("summary") && r.highlights?.length) {
+          row.summary = r.highlights[0].slice(0, 300);
+        }
+        if (row.hasOwnProperty("description") && r.highlights?.length) {
+          row.description = r.highlights[0].slice(0, 300);
+        }
+        if (row.hasOwnProperty("content") && r.text) {
+          row.content = r.text.slice(0, 280);
+        }
+        if (row.hasOwnProperty("source")) {
+          try {
+            row.source = new URL(r.url).hostname.replace("www.", "");
+          } catch (_e) {
+            row.source = "";
+          }
+        }
+        if (row.hasOwnProperty("published_date") && r.publishedDate) {
+          row.published_date = r.publishedDate.slice(0, 10);
+        }
+        if (row.hasOwnProperty("date") && r.publishedDate) {
+          row.date = r.publishedDate.slice(0, 10);
+        }
+        return row;
+      });
+
+      setRows(initialRows);
+      setPhase("enriching");
       setTableName(query.slice(0, 50));
+      setLoading(false);
+      setEnriching(true);
+
+      // Phase 2: Deep search with outputSchema for enrichment
+      const schema = buildOutputSchema(schemaKey, numResults);
+      const deepResult = await exaSearch(query, apiKey, {
+        numResults: Math.max(numResults * 2, 20),
+        type: "deep",
+        ...(category !== "none" && { category }),
+        outputSchema: schema,
+      });
+
+      const content = deepResult.output?.content;
+      let enrichedItems = [];
+      if (Array.isArray(content?.results)) {
+        enrichedItems = content.results;
+      } else if (Array.isArray(content)) {
+        enrichedItems = content;
+      } else if (content && typeof content === "object") {
+        const firstArray = Object.values(content).find(Array.isArray);
+        if (firstArray) enrichedItems = firstArray;
+      }
+
+      if (enrichedItems.length) {
+        setRows(enrichedItems);
+        setVisibleCount(enrichedItems.length);
+      }
+      setPhase("results");
+      setEnriching(false);
     } catch (err) {
-      setError(err.message);
-      setPhase("input");
-      setColumns([]);
+      if (phase === "enriching" || rows.length > 0) {
+        setPhase("results");
+        setEnriching(false);
+      } else {
+        setError(err.message);
+        setPhase("input");
+        setColumns([]);
+      }
     }
     setLoading(false);
   }, [query, numResults, category, apiKey]);
@@ -451,8 +520,8 @@ function CreateWebTable({ apiKey, onBack }) {
         🌐 Create a Web Table
       </Heading>
       <Text textColor="light" marginBottom={2}>
-        Exa will search the web to find companies and enrich them with leadership, headcount, funding, news, and
-        more.
+        Exa will search the web to find companies and enrich them with leadership, headcount,
+        funding, news, and more.
       </Text>
 
       <Label htmlFor="query-input">What are you looking for?</Label>
@@ -505,18 +574,27 @@ function CreateWebTable({ apiKey, onBack }) {
         </Box>
       )}
 
-      {(phase === "searching" || phase === "results") && columns.length > 0 && (
+      {(phase === "searching" || phase === "enriching" || phase === "results") &&
+        columns.length > 0 && (
         <Box marginTop={2}>
-          {phase === "results" && (
+          {(phase === "results" || phase === "enriching") && rows.length > 0 && (
             <Heading size="xsmall" marginBottom={1}>
-              Found {rows.length} results
+              Found {rows.length} results{enriching ? " — enriching..." : ""}
             </Heading>
           )}
           {phase === "searching" && (
             <Box display="flex" alignItems="center" marginBottom={1}>
               <Loader scale={0.3} />
               <Text marginLeft={2} textColor="light" fontSize="13px">
-                Deep searching the web with Exa...
+                Searching the web with Exa...
+              </Text>
+            </Box>
+          )}
+          {enriching && (
+            <Box display="flex" alignItems="center" marginBottom={1}>
+              <Loader scale={0.3} />
+              <Text marginLeft={2} textColor="light" fontSize="13px">
+                Enriching with deep search...
               </Text>
             </Box>
           )}
@@ -609,7 +687,7 @@ function CreateWebTable({ apiKey, onBack }) {
                       ))}
                     </tr>
                   ))}
-                {phase === "results" &&
+                {(phase === "results" || phase === "enriching") &&
                   rows.slice(0, visibleCount).map((row, i) => (
                     <tr
                       key={i}
@@ -648,9 +726,7 @@ function CreateWebTable({ apiKey, onBack }) {
                                 .slice(0, 30)}
                             </Link>
                           ) : (
-                            <Text fontSize="12px">
-                              {String(row[col.key] ?? "").slice(0, 120)}
-                            </Text>
+                            <Text fontSize="12px">{String(row[col.key] ?? "").slice(0, 120)}</Text>
                           )}
                         </td>
                       ))}
@@ -660,7 +736,7 @@ function CreateWebTable({ apiKey, onBack }) {
             </table>
           </Box>
 
-          {phase === "results" && visibleCount >= rows.length && (
+          {(phase === "results" || phase === "enriching") && visibleCount >= rows.length && (
             <Box display="flex" alignItems="center">
               <Input
                 placeholder="Table name"
