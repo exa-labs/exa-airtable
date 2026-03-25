@@ -69,14 +69,146 @@ async function exaSearch(query, apiKey, opts = {}) {
       query,
       numResults: opts.numResults ?? 5,
       type: opts.type ?? "auto",
-      contents: { text: { maxCharacters: 1200 }, highlights: true },
+      contents: { highlights: { maxCharacters: 4000 } },
       ...(opts.category && { category: opts.category }),
+      ...(opts.outputSchema && { outputSchema: opts.outputSchema }),
       ...(opts.startPublishedDate && { startPublishedDate: opts.startPublishedDate }),
       ...(opts.includeDomains && { includeDomains: opts.includeDomains }),
     },
     apiKey,
   );
 }
+
+const OUTPUT_SCHEMAS = {
+  company: {
+    type: "object",
+    properties: {
+      results: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            website: { type: "string" },
+            description: { type: "string" },
+            headquarters: { type: "string" },
+            founded_year: { type: "number" },
+            employee_count: { type: "number" },
+            total_funding: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+  news: {
+    type: "object",
+    properties: {
+      results: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            source: { type: "string" },
+            url: { type: "string" },
+            published_date: { type: "string" },
+            summary: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+  "research paper": {
+    type: "object",
+    properties: {
+      results: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            authors: { type: "string" },
+            year: { type: "number" },
+            url: { type: "string" },
+            summary: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+  tweet: {
+    type: "object",
+    properties: {
+      results: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            author: { type: "string" },
+            handle: { type: "string" },
+            content: { type: "string" },
+            url: { type: "string" },
+            date: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+  none: {
+    type: "object",
+    properties: {
+      results: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            url: { type: "string" },
+            description: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+};
+
+const TABLE_FIELDS = {
+  company: [
+    { name: "Name", type: "singleLineText", key: "name" },
+    { name: "Website", type: "url", key: "website" },
+    { name: "Description", type: "multilineText", key: "description" },
+    { name: "Headquarters", type: "singleLineText", key: "headquarters" },
+    { name: "Founded", type: "number", key: "founded_year", options: { precision: 0 } },
+    { name: "Employees", type: "number", key: "employee_count", options: { precision: 0 } },
+    { name: "Funding", type: "singleLineText", key: "total_funding" },
+  ],
+  news: [
+    { name: "Title", type: "singleLineText", key: "title" },
+    { name: "Source", type: "singleLineText", key: "source" },
+    { name: "URL", type: "url", key: "url" },
+    { name: "Date", type: "singleLineText", key: "published_date" },
+    { name: "Summary", type: "multilineText", key: "summary" },
+  ],
+  "research paper": [
+    { name: "Title", type: "singleLineText", key: "title" },
+    { name: "Authors", type: "singleLineText", key: "authors" },
+    { name: "Year", type: "number", key: "year", options: { precision: 0 } },
+    { name: "URL", type: "url", key: "url" },
+    { name: "Summary", type: "multilineText", key: "summary" },
+  ],
+  tweet: [
+    { name: "Author", type: "singleLineText", key: "author" },
+    { name: "Handle", type: "singleLineText", key: "handle" },
+    { name: "Content", type: "multilineText", key: "content" },
+    { name: "URL", type: "url", key: "url" },
+    { name: "Date", type: "singleLineText", key: "date" },
+  ],
+  none: [
+    { name: "Name", type: "singleLineText", key: "name" },
+    { name: "URL", type: "url", key: "url" },
+    { name: "Description", type: "multilineText", key: "description" },
+  ],
+};
 
 async function exaAnswer(query, apiKey, opts = {}) {
   return exaPost(
@@ -232,8 +364,8 @@ function CreateWebTable({ apiKey, onBack }) {
   const [numResults, setNumResults] = useState(10);
   const [category, setCategory] = useState("company");
   const [rows, setRows] = useState([]);
+  const [columns, setColumns] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState({ current: 0, total: 0, label: "" });
   const [error, setError] = useState(null);
   const [phase, setPhase] = useState("input");
   const [tableName, setTableName] = useState("");
@@ -242,83 +374,68 @@ function CreateWebTable({ apiKey, onBack }) {
     setLoading(true);
     setError(null);
     setRows([]);
+    setColumns([]);
     setPhase("input");
-    setProgress({ current: 0, total: 0, label: "Searching the web with Exa..." });
 
     try {
+      const schemaKey = category === "none" ? "none" : category;
+      const schema = OUTPUT_SCHEMAS[schemaKey] || OUTPUT_SCHEMAS.none;
+      const fieldDefs = TABLE_FIELDS[schemaKey] || TABLE_FIELDS.none;
+
       const searchResult = await exaSearch(query, apiKey, {
         numResults,
         type: "deep",
         ...(category !== "none" && { category }),
+        outputSchema: schema,
       });
 
-      if (!searchResult.results?.length) {
+      const items = searchResult.output?.content?.results || [];
+      if (!items.length) {
         setError("No results found. Try a different query.");
         setLoading(false);
         return;
       }
 
-      const results = searchResult.results;
-      setProgress({ current: 0, total: results.length, label: "Enriching results..." });
-
-      const enrichedRows = [];
-      for (let i = 0; i < results.length; i++) {
-        const r = results[i];
-        setProgress({
-          current: i + 1,
-          total: results.length,
-          label: r.title || r.url,
-        });
-
-        const row = {
-          Name: r.title || "",
-          Website: r.url || "",
-          Description: "",
-        };
-
-        // Extract description from highlights or text
-        if (r.highlights?.length > 0) {
-          row.Description = r.highlights[0];
-        } else if (r.text) {
-          row.Description = r.text.slice(0, 300);
-        }
-
-        enrichedRows.push(row);
-        await sleep(50);
-      }
-
-      setRows(enrichedRows);
+      setColumns(fieldDefs);
+      setRows(items);
       setPhase("results");
       setTableName(query.slice(0, 50));
     } catch (err) {
       setError(err.message);
     }
     setLoading(false);
-  }, [query, numResults, apiKey]);
+  }, [query, numResults, category, apiKey]);
 
   const writeToBase = useCallback(async () => {
-    if (!rows.length) return;
+    if (!rows.length || !columns.length) return;
     setLoading(true);
     setError(null);
 
     try {
       const name = tableName || query.slice(0, 50);
 
-      const fields = [
-        { name: "Name", type: "singleLineText" },
-        { name: "Website", type: "url" },
-        { name: "Description", type: "multilineText" },
-      ];
+      const airtableFields = columns.map((col) => {
+        const def = { name: col.name, type: col.type };
+        if (col.options) def.options = col.options;
+        return def;
+      });
 
-      const newTable = await base.createTableAsync(name, fields);
+      const newTable = await base.createTableAsync(name, airtableFields);
 
-      const recordDefs = rows.map((row) => ({
-        fields: {
-          Name: row.Name || "",
-          Website: row.Website || "",
-          Description: row.Description || "",
-        },
-      }));
+      const recordDefs = rows.map((row) => {
+        const fields = {};
+        for (const col of columns) {
+          const val = row[col.key];
+          if (val == null) continue;
+          if (col.type === "number") {
+            const num = typeof val === "number" ? val : parseFloat(val);
+            if (!isNaN(num)) fields[col.name] = num;
+          } else {
+            fields[col.name] = String(val);
+          }
+        }
+        return { fields };
+      });
 
       for (let i = 0; i < recordDefs.length; i += 50) {
         await newTable.createRecordsAsync(recordDefs.slice(i, i + 50));
@@ -329,7 +446,7 @@ function CreateWebTable({ apiKey, onBack }) {
       setError(err.message);
     }
     setLoading(false);
-  }, [rows, tableName, query, base]);
+  }, [rows, columns, tableName, query, base]);
 
   return (
     <Box padding={3}>
@@ -385,11 +502,16 @@ function CreateWebTable({ apiKey, onBack }) {
         disabled={!query.trim() || loading}
         marginBottom={2}
       >
-        {loading && phase === "input" ? <Loader scale={0.2} /> : "Search the Web"}
+        {loading ? <Loader scale={0.2} /> : "Search the Web"}
       </Button>
 
-      {loading && progress.total > 0 && (
-        <ProgressBar current={progress.current} total={progress.total} label={progress.label} />
+      {loading && (
+        <Box display="flex" alignItems="center" marginBottom={2}>
+          <Loader scale={0.3} />
+          <Text marginLeft={2} textColor="light">
+            Deep searching the web with Exa...
+          </Text>
+        </Box>
       )}
 
       {error && (
@@ -414,23 +536,29 @@ function CreateWebTable({ apiKey, onBack }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid #ddd", background: "#f9f9f9" }}>
-                  <th style={{ padding: "6px 8px", textAlign: "left" }}>Name</th>
-                  <th style={{ padding: "6px 8px", textAlign: "left" }}>Website</th>
-                  <th style={{ padding: "6px 8px", textAlign: "left" }}>Description</th>
+                  {columns.map((col) => (
+                    <th key={col.key} style={{ padding: "6px 8px", textAlign: "left" }}>
+                      {col.name}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row, i) => (
                   <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
-                    <td style={{ padding: "6px 8px" }}>{row.Name}</td>
-                    <td style={{ padding: "6px 8px" }}>
-                      <Link href={row.Website} target="_blank" style={{ fontSize: "11px" }}>
-                        {row.Website?.replace(/https?:\/\/(www\.)?/, "").slice(0, 30)}
-                      </Link>
-                    </td>
-                    <td style={{ padding: "6px 8px", maxWidth: "200px" }}>
-                      <Text fontSize="11px">{row.Description?.slice(0, 100)}</Text>
-                    </td>
+                    {columns.map((col) => (
+                      <td key={col.key} style={{ padding: "6px 8px", maxWidth: "200px" }}>
+                        {col.type === "url" ? (
+                          <Link href={row[col.key]} target="_blank" style={{ fontSize: "11px" }}>
+                            {String(row[col.key] || "").replace(/https?:\/\/(www\.)?/, "").slice(0, 30)}
+                          </Link>
+                        ) : (
+                          <Text fontSize="11px">
+                            {String(row[col.key] ?? "").slice(0, 120)}
+                          </Text>
+                        )}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
