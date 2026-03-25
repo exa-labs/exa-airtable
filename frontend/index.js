@@ -430,7 +430,10 @@ function CreateWebTable({ apiKey, onBack }) {
       setEnriching(true);
 
       // Phase 2: Deep search with outputSchema for enrichment
-      // Pass domains from Phase 1 so the deep search enriches the same entities
+      // Build a targeted query that names the exact entities from Phase 1
+      const entityNames = fastResults
+        .map((r) => (r.title || "").replace(/\s*[-|–—].*/g, "").trim())
+        .filter(Boolean);
       const domains = [];
       for (const r of fastResults) {
         try {
@@ -440,8 +443,12 @@ function CreateWebTable({ apiKey, onBack }) {
           /* skip bad URLs */
         }
       }
+      const deepQuery =
+        entityNames.length > 0
+          ? `${query}. Focus on these specific entities: ${entityNames.join(", ")}`
+          : query;
       const schema = buildOutputSchema(schemaKey, numResults);
-      const deepResult = await exaSearch(query, apiKey, {
+      const deepResult = await exaSearch(deepQuery, apiKey, {
         numResults: Math.max(numResults * 2, 20),
         type: "deep",
         ...(category !== "none" && { category }),
