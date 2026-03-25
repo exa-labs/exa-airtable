@@ -365,6 +365,8 @@ function CreateWebTable({ apiKey, onBack }) {
     const fieldDefs = TABLE_FIELDS[schemaKey] || TABLE_FIELDS.none;
     setColumns(fieldDefs);
     setPhase("searching");
+    let localPhase = "searching";
+    let hasPhase1Results = false;
 
     try {
       // Phase 1: Fast search to get titles/URLs quickly
@@ -425,6 +427,8 @@ function CreateWebTable({ apiKey, onBack }) {
 
       setRows(initialRows);
       setPhase("enriching");
+      localPhase = "enriching";
+      hasPhase1Results = true;
       setTableName(query.slice(0, 50));
       setLoading(false);
       setEnriching(true);
@@ -474,7 +478,7 @@ function CreateWebTable({ apiKey, onBack }) {
       setPhase("results");
       setEnriching(false);
     } catch (err) {
-      if (phase === "enriching" || rows.length > 0) {
+      if (localPhase === "enriching" || hasPhase1Results) {
         setPhase("results");
         setEnriching(false);
       } else {
