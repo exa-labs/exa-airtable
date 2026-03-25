@@ -252,39 +252,55 @@ function ToggleSwitch({checked, onChange}) {
 function CreateWebTable({apiKey, onBack}) {
     const base = useBase();
     const [query, setQuery] = useState('');
-    const [numResults, setNumResults] = useState(10);
+    const numResults = 10;
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
     const [progress, setProgress] = useState({current: 0, total: 0, label: ''});
     const [error, setError] = useState(null);
     const [phase, setPhase] = useState('input');
     const [tableName, setTableName] = useState('');
+    const [statusMsg, setStatusMsg] = useState('');
+    const [activeColumns, setActiveColumns] = useState([]);
 
     const search = useCallback(async () => {
         setLoading(true);
         setError(null);
         setRows([]);
         setPhase('input');
-        setProgress({current: 0, total: 0, label: 'Searching the web with Exa...'});
+        setStatusMsg('Searching the web...');
+        setProgress({current: 0, total: 0, label: ''});
+
+        // Rotate status messages while the deep search runs
+        const messages = [
+            'Searching the web...',
+            'Reading sources...',
+            'Extracting entities...',
+            'Enriching with company data...',
+            'Almost there...',
+        ];
+        let msgIdx = 0;
+        const statusInterval = setInterval(() => {
+            msgIdx = Math.min(msgIdx + 1, messages.length - 1);
+            setStatusMsg(messages[msgIdx]);
+        }, 4000);
 
         try {
+            // Let the deep search decide what fields are relevant to the query
             const outputSchema = {
                 type: 'object',
                 properties: {
                     entities: {
                         type: 'array',
+                        description: `List of entities matching: "${query}". Include all relevant fields. Omit fields where data is unavailable.`,
                         items: {
                             type: 'object',
                             properties: {
-                                name: {type: 'string', description: 'Company or entity name'},
-                                website: {type: 'string', description: 'Primary website URL'},
-                                description: {type: 'string', description: 'Brief description of what the company does and when it was founded'},
-                                headquarters: {type: 'string', description: 'HQ city and country, e.g. "San Francisco, CA, USA"'},
-                                headcount: {type: 'string', description: 'Approximate employee count or range, e.g. "500-1000" or "~2000"'},
-                                leadership: {type: 'string', description: 'CEO / key leaders, e.g. "CEO: Jane Doe, CTO: John Smith"'},
-                                funding: {type: 'string', description: 'Latest funding info, e.g. "Series B, $50M" or "Public (NYSE: XYZ)"'},
-                                recentNews: {type: 'string', description: 'One-sentence summary of the most recent notable news or announcement'},
-                                industry: {type: 'string', description: 'Primary industry or sector, e.g. "AI / Machine Learning"'},
+                                name: {type: 'string'},
+                                website: {type: 'string'},
+                                description: {type: 'string'},
+                                location: {type: 'string'},
+                                funding: {type: 'string'},
+                                category: {type: 'string'},
                             },
                         },
                     },
@@ -306,6 +322,29 @@ function CreateWebTable({apiKey, onBack}) {
                 return;
             }
 
+            // All possible fields from the schema
+            const fieldKeys = [
+                'name', 'website', 'description', 'location',
+                'funding', 'category',
+            ];
+            const fieldLabels = {
+                name: 'Name', website: 'Website', description: 'Description',
+                location: 'Location', funding: 'Funding', category: 'Category',
+            };
+
+            // Determine which fields have data in at least 30% of entities
+            const threshold = Math.max(1, Math.floor(entities.length * 0.3));
+            const activeFields = fieldKeys.filter(key =>
+                entities.filter(e => e[key] && String(e[key]).trim()).length >= threshold,
+            );
+
+            // Always include name and website if present at all
+            for (const key of ['name', 'website']) {
+                if (!activeFields.includes(key) && entities.some(e => e[key])) {
+                    activeFields.unshift(key);
+                }
+            }
+
             setProgress({current: 0, total: entities.length, label: 'Processing results...'});
 
             const enrichedRows = [];
@@ -317,64 +356,50 @@ function CreateWebTable({apiKey, onBack}) {
                     label: e.name || '',
                 });
 
-                enrichedRows.push({
-                    Name: e.name || '',
-                    Website: e.website || '',
-                    Description: e.description || '',
-                    Headquarters: e.headquarters || '',
-                    Headcount: e.headcount || '',
-                    Leadership: e.leadership || '',
-                    Funding: e.funding || '',
-                    'Recent News': e.recentNews || '',
-                    Industry: e.industry || '',
-                });
+                const row = {};
+                for (const key of activeFields) {
+                    row[fieldLabels[key]] = e[key] || '';
+                }
+                enrichedRows.push(row);
                 await sleep(50);
             }
 
             setRows(enrichedRows);
+            setActiveColumns(activeFields.map(k => fieldLabels[k]));
             setPhase('results');
             setTableName(query.slice(0, 50));
         } catch (err) {
             setError(err.message);
         }
+        clearInterval(statusInterval);
+        setStatusMsg('');
         setLoading(false);
     }, [query, numResults, apiKey]);
 
     const writeToBase = useCallback(async () => {
-        if (!rows.length) return;
+        if (!rows.length || !activeColumns.length) return;
         setLoading(true);
         setError(null);
 
         try {
             const name = tableName || query.slice(0, 50);
 
-            const fields = [
-                {name: 'Name', type: 'singleLineText'},
-                {name: 'Website', type: 'url'},
-                {name: 'Description', type: 'multilineText'},
-                {name: 'Headquarters', type: 'singleLineText'},
-                {name: 'Headcount', type: 'singleLineText'},
-                {name: 'Leadership', type: 'singleLineText'},
-                {name: 'Funding', type: 'singleLineText'},
-                {name: 'Recent News', type: 'multilineText'},
-                {name: 'Industry', type: 'singleLineText'},
-            ];
+            const fields = activeColumns.map(col => ({
+                name: col,
+                type: col === 'Website' ? 'url'
+                    : (col === 'Description' || col === 'Highlights') ? 'multilineText'
+                    : 'singleLineText',
+            }));
 
             const newTable = await base.createTableAsync(name, fields);
 
-            const recordDefs = rows.map(row => ({
-                fields: {
-                    Name: row.Name || '',
-                    Website: row.Website || '',
-                    Description: row.Description || '',
-                    Headquarters: row.Headquarters || '',
-                    Headcount: row.Headcount || '',
-                    Leadership: row.Leadership || '',
-                    Funding: row.Funding || '',
-                    'Recent News': row['Recent News'] || '',
-                    Industry: row.Industry || '',
-                },
-            }));
+            const recordDefs = rows.map(row => {
+                const fieldValues = {};
+                for (const col of activeColumns) {
+                    fieldValues[col] = row[col] || '';
+                }
+                return {fields: fieldValues};
+            });
 
             for (let i = 0; i < recordDefs.length; i += 50) {
                 await newTable.createRecordsAsync(recordDefs.slice(i, i + 50));
@@ -385,7 +410,7 @@ function CreateWebTable({apiKey, onBack}) {
             setError(err.message);
         }
         setLoading(false);
-    }, [rows, tableName, query, base]);
+    }, [rows, activeColumns, tableName, query, base]);
 
     return (
         <Box padding={3}>
@@ -413,24 +438,22 @@ function CreateWebTable({apiKey, onBack}) {
                 marginBottom={2}
             />
 
-            <Label htmlFor="num-input">Number of results</Label>
-            <Input
-                id="num-input"
-                type="number"
-                value={String(numResults)}
-                onChange={e => setNumResults(parseInt(e.target.value) || 10)}
-                marginBottom={2}
-                width="80px"
-            />
-
             <Button
                 variant="primary"
                 onClick={search}
                 disabled={!query.trim() || loading}
                 marginBottom={2}
+                width="100%"
             >
                 {loading && phase === 'input' ? <Loader scale={0.2} /> : 'Search the Web'}
             </Button>
+
+            {loading && statusMsg && (
+                <Box display="flex" alignItems="center" marginBottom={2}>
+                    <Loader scale={0.2} />
+                    <Text fontSize="13px" textColor="light" marginLeft={1}>{statusMsg}</Text>
+                </Box>
+            )}
 
             {loading && progress.total > 0 && (
                 <ProgressBar
@@ -467,35 +490,25 @@ function CreateWebTable({apiKey, onBack}) {
                         <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '12px'}}>
                             <thead>
                                 <tr style={{borderBottom: '1px solid #ddd', background: '#f9f9f9'}}>
-                                    <th style={{padding: '6px 8px', textAlign: 'left'}}>Name</th>
-                                    <th style={{padding: '6px 8px', textAlign: 'left'}}>Website</th>
-                                    <th style={{padding: '6px 8px', textAlign: 'left'}}>Industry</th>
-                                    <th style={{padding: '6px 8px', textAlign: 'left'}}>HQ</th>
-                                    <th style={{padding: '6px 8px', textAlign: 'left'}}>Headcount</th>
-                                    <th style={{padding: '6px 8px', textAlign: 'left'}}>Leadership</th>
+                                    {activeColumns.map(col => (
+                                        <th key={col} style={{padding: '6px 8px', textAlign: 'left'}}>{col}</th>
+                                    ))}
                                 </tr>
                             </thead>
                             <tbody>
                                 {rows.map((row, i) => (
                                     <tr key={i} style={{borderBottom: '1px solid #eee'}}>
-                                        <td style={{padding: '6px 8px', fontWeight: 500}}>{row.Name}</td>
-                                        <td style={{padding: '6px 8px'}}>
-                                            <Link href={row.Website} target="_blank" style={{fontSize: '11px'}}>
-                                                {row.Website?.replace(/https?:\/\/(www\.)?/, '').slice(0, 25)}
-                                            </Link>
-                                        </td>
-                                        <td style={{padding: '6px 8px'}}>
-                                            <Text fontSize="11px">{row.Industry}</Text>
-                                        </td>
-                                        <td style={{padding: '6px 8px'}}>
-                                            <Text fontSize="11px">{row.Headquarters}</Text>
-                                        </td>
-                                        <td style={{padding: '6px 8px'}}>
-                                            <Text fontSize="11px">{row.Headcount}</Text>
-                                        </td>
-                                        <td style={{padding: '6px 8px', maxWidth: '150px'}}>
-                                            <Text fontSize="11px">{row.Leadership?.slice(0, 60)}</Text>
-                                        </td>
+                                        {activeColumns.map(col => (
+                                            <td key={col} style={{padding: '6px 8px', maxWidth: '200px'}}>
+                                                {col === 'Website' ? (
+                                                    <Link href={row[col]} target="_blank" style={{fontSize: '11px'}}>
+                                                        {row[col]?.replace(/https?:\/\/(www\.)?/, '').slice(0, 25)}
+                                                    </Link>
+                                                ) : (
+                                                    <Text fontSize="11px">{String(row[col] || '').slice(0, 80)}</Text>
+                                                )}
+                                            </td>
+                                        ))}
                                     </tr>
                                 ))}
                             </tbody>
