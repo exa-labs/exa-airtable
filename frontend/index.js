@@ -79,99 +79,62 @@ async function exaSearch(query, apiKey, opts = {}) {
   );
 }
 
-const OUTPUT_SCHEMAS = {
+const SCHEMA_ITEMS = {
   company: {
-    type: "object",
-    properties: {
-      results: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            name: { type: "string" },
-            website: { type: "string" },
-            short_description: { type: "string" },
-            category: { type: "string" },
-            headquarters: { type: "string" },
-            founded_year: { type: "number" },
-            employee_count: { type: "number" },
-            total_funding: { type: "string" },
-          },
-        },
-      },
-    },
+    name: { type: "string" },
+    website: { type: "string" },
+    short_description: { type: "string" },
+    category: { type: "string" },
+    headquarters: { type: "string" },
+    founded_year: { type: "number" },
+    employee_count: { type: "number" },
+    total_funding: { type: "string" },
   },
   news: {
-    type: "object",
-    properties: {
-      results: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-            source: { type: "string" },
-            url: { type: "string" },
-            published_date: { type: "string" },
-            summary: { type: "string" },
-          },
-        },
-      },
-    },
+    title: { type: "string" },
+    source: { type: "string" },
+    url: { type: "string" },
+    published_date: { type: "string" },
+    summary: { type: "string" },
   },
   "research paper": {
-    type: "object",
-    properties: {
-      results: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-            authors: { type: "string" },
-            year: { type: "number" },
-            url: { type: "string" },
-            summary: { type: "string" },
-          },
-        },
-      },
-    },
+    title: { type: "string" },
+    authors: { type: "string" },
+    year: { type: "number" },
+    url: { type: "string" },
+    summary: { type: "string" },
   },
   tweet: {
-    type: "object",
-    properties: {
-      results: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            author: { type: "string" },
-            handle: { type: "string" },
-            content: { type: "string" },
-            url: { type: "string" },
-            date: { type: "string" },
-          },
-        },
-      },
-    },
+    author: { type: "string" },
+    handle: { type: "string" },
+    content: { type: "string" },
+    url: { type: "string" },
+    date: { type: "string" },
   },
   none: {
+    name: { type: "string" },
+    url: { type: "string" },
+    description: { type: "string" },
+  },
+};
+
+function buildOutputSchema(categoryKey, count) {
+  const props = SCHEMA_ITEMS[categoryKey] || SCHEMA_ITEMS.none;
+  return {
     type: "object",
     properties: {
       results: {
         type: "array",
+        description: `Return exactly ${count} distinct items. Do not merge or deduplicate.`,
+        minItems: count,
         items: {
           type: "object",
-          properties: {
-            name: { type: "string" },
-            url: { type: "string" },
-            description: { type: "string" },
-          },
+          properties: props,
         },
       },
     },
-  },
-};
+  };
+}
 
 const TABLE_FIELDS = {
   company: [
@@ -381,11 +344,11 @@ function CreateWebTable({ apiKey, onBack }) {
 
     try {
       const schemaKey = category === "none" ? "none" : category;
-      const schema = OUTPUT_SCHEMAS[schemaKey] || OUTPUT_SCHEMAS.none;
+      const schema = buildOutputSchema(schemaKey, numResults);
       const fieldDefs = TABLE_FIELDS[schemaKey] || TABLE_FIELDS.none;
 
       const searchResult = await exaSearch(query, apiKey, {
-        numResults,
+        numResults: Math.max(numResults * 2, 20),
         type: "deep",
         ...(category !== "none" && { category }),
         outputSchema: schema,
