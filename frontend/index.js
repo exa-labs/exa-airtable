@@ -550,12 +550,12 @@ function CreateWebTable({ apiKey, onBack }) {
                       <td key={col.key} style={{ padding: "6px 8px", maxWidth: "200px" }}>
                         {col.type === "url" ? (
                           <Link href={row[col.key]} target="_blank" style={{ fontSize: "11px" }}>
-                            {String(row[col.key] || "").replace(/https?:\/\/(www\.)?/, "").slice(0, 30)}
+                            {String(row[col.key] || "")
+                              .replace(/https?:\/\/(www\.)?/, "")
+                              .slice(0, 30)}
                           </Link>
                         ) : (
-                          <Text fontSize="11px">
-                            {String(row[col.key] ?? "").slice(0, 120)}
-                          </Text>
+                          <Text fontSize="11px">{String(row[col.key] ?? "").slice(0, 120)}</Text>
                         )}
                       </td>
                     ))}
@@ -730,7 +730,11 @@ function NewsMonitor({ apiKey, onBack }) {
       setTableName(`News ${new Date().toISOString().slice(0, 10)}`);
     } catch (err) {
       setError(err.message);
-      // Clean up on error
+      if (allResults.length > 0) {
+        setResults(allResults);
+        setPhase("results");
+        setTableName(`News ${new Date().toISOString().slice(0, 10)}`);
+      }
       for (const m of monitors) {
         await deleteMonitor(m.id, apiKey).catch(() => {});
       }
