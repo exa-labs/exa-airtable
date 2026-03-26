@@ -2,7 +2,7 @@
 
 Airtable extension powered by [Exa](https://exa.ai) that searches the web and populates tables with structured results.
 
-Enter a query, Exa runs a deep search with structured extraction (`outputSchema`), and the results appear as a new Airtable table — pre-filled with columns like Name, Website, Description, Category, Headquarters, Founded, Employees, and Funding.
+Enter a query, Exa runs a deep search with structured extraction (`outputSchema`), and the results appear as a new Airtable table — pre-filled with columns like Name, Short Description, Category, Website, Headquarters, Founded, Employees, and Funding.
 
 ## Setup
 
