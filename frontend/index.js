@@ -19,7 +19,7 @@ import React, { useState, useCallback, useEffect, useRef } from "react";
 // Exa API
 // ---------------------------------------------------------------------------
 
-const PROXY_URL = "https://localhost:9005";
+const PROXY_URL = "https://exa-proxy.vercel.app";
 const INTEGRATION = "airtable";
 const BATCH_DELAY = 250;
 
@@ -32,7 +32,7 @@ function exaHeaders(apiKey) {
 }
 
 async function exaFetch(method, endpoint, apiKey, body) {
-  const url = `${PROXY_URL}/proxy${endpoint}`;
+  const url = `${PROXY_URL}/api/proxy?path=${encodeURIComponent(endpoint)}`;
   const opts = { method, headers: exaHeaders(apiKey) };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(url, opts);

@@ -1,0 +1,11 @@
+{
+  "framework": null,
+  "installCommand": "true",
+  "buildCommand": "true",
+  "outputDirectory": ".",
+  "functions": {
+    "api/proxy.js": {
+      "maxDuration": 60
+    }
+  }
+}
