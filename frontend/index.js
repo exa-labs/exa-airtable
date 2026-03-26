@@ -237,48 +237,6 @@ function ApiKeySetup({ onSave }) {
 // Tool Card
 // ---------------------------------------------------------------------------
 
-function ToolCard({ icon, title, description, tag, onClick }) {
-  return (
-    <Box
-      as="button"
-      padding={2}
-      marginBottom={2}
-      borderRadius="large"
-      border="default"
-      width="100%"
-      display="flex"
-      alignItems="flex-start"
-      onClick={onClick}
-      style={{
-        cursor: "pointer",
-        background: "none",
-        textAlign: "left",
-        transition: "background 0.1s",
-      }}
-      className="tool-card"
-    >
-      <Text fontSize="24px" marginRight={2}>
-        {icon}
-      </Text>
-      <Box flex={1}>
-        <Box display="flex" alignItems="center">
-          <Text fontWeight="600">{title}</Text>
-          {tag && (
-            <Box marginLeft={1} paddingX={1} borderRadius="default" backgroundColor="#FFF3CD">
-              <Text fontSize="11px" textColor="#856404">
-                {tag}
-              </Text>
-            </Box>
-          )}
-        </Box>
-        <Text textColor="light" fontSize="12px" marginTop="2px">
-          {description}
-        </Text>
-      </Box>
-    </Box>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Progress Bar
 // ---------------------------------------------------------------------------
@@ -459,13 +417,10 @@ function CreateWebTable({ apiKey, onBack }) {
 
   return (
     <Box padding={3}>
-      <Button icon="chevronLeft" variant="secondary" size="small" onClick={onBack} marginBottom={2}>
-        Back
-      </Button>
-
-      <Heading size="small" marginBottom={1}>
-        🌐 Create a Web Table
-      </Heading>
+      <Box display="flex" justifyContent="space-between" alignItems="center" marginBottom={1}>
+        <Heading size="small">🌐 Create a Web Table</Heading>
+        <Button variant="secondary" size="small" icon="cog" onClick={onBack} aria-label="Settings" />
+      </Box>
       <Text textColor="light" marginBottom={2}>
         Exa will search the web to find companies and enrich them with leadership, headcount, funding, news, and
         more.
@@ -1127,8 +1082,6 @@ function GenerateReport({ apiKey, onBack }) {
 
 function ExaApp() {
   const globalConfig = useGlobalConfig();
-  const [activeTool, setActiveTool] = useState(null);
-
   const apiKey = globalConfig.get("exaApiKey");
 
   const saveApiKey = useCallback(
@@ -1144,70 +1097,13 @@ function ExaApp() {
     if (globalConfig.checkPermissionsForSet("exaApiKey").hasPermission) {
       await globalConfig.setAsync("exaApiKey", "");
     }
-    setActiveTool(null);
   }, [globalConfig]);
 
   if (!apiKey) {
     return <ApiKeySetup onSave={saveApiKey} />;
   }
 
-  if (activeTool) {
-    const tools = {
-      webTable: CreateWebTable,
-      news: NewsMonitor,
-      report: GenerateReport,
-    };
-    const ToolComponent = tools[activeTool];
-    return <ToolComponent apiKey={apiKey} onBack={() => setActiveTool(null)} />;
-  }
-
-  return (
-    <Box padding={3}>
-      <Box display="flex" justifyContent="space-between" alignItems="center" marginBottom={1}>
-        <Heading>⚡ Exa</Heading>
-        <Button
-          variant="secondary"
-          size="small"
-          icon="cog"
-          onClick={clearApiKey}
-          aria-label="Settings"
-        />
-      </Box>
-      <Text textColor="light" marginBottom={3}>
-        Web intelligence for your base
-      </Text>
-
-      <ToolCard
-        icon="🌐"
-        title="Create a web table"
-        tag="Exa Search"
-        description="Search the web to find companies, people, or data and populate a new table."
-        onClick={() => setActiveTool("webTable")}
-      />
-      <ToolCard
-        icon="📰"
-        title="News monitor"
-        description="Find recent news articles about topics or companies and create a news table."
-        onClick={() => setActiveTool("news")}
-      />
-      <ToolCard
-        icon="📄"
-        title="Generate a report"
-        description="Research the web and write a long-form summary, analysis, or overview."
-        onClick={() => setActiveTool("report")}
-      />
-
-      <Box marginTop={3} display="flex" justifyContent="center">
-        <Text fontSize="11px" textColor="light">
-          Powered by{" "}
-          <Link href="https://exa.ai" target="_blank">
-            Exa
-          </Link>{" "}
-          — the search engine for AI
-        </Text>
-      </Box>
-    </Box>
-  );
+  return <CreateWebTable apiKey={apiKey} onBack={clearApiKey} />;
 }
 
 initializeBlock(() => <ExaApp />);
