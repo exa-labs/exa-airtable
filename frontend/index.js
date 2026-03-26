@@ -429,7 +429,7 @@ function CreateWebTable({ apiKey, onBack }) {
       <Label htmlFor="query-input">What are you looking for?</Label>
       <Input
         id="query-input"
-        placeholder='e.g. "Top AI startups in San Francisco"'
+        placeholder='e.g. "Companies that are competitors of Exa"'
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         marginBottom={2}
