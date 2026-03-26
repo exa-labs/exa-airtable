@@ -236,7 +236,14 @@ function ApiKeySetup({ onSave }) {
 // Enrichment Pill Selector
 // ---------------------------------------------------------------------------
 
-function EnrichmentPills({ category, selected, onChange, customFields, onAddCustom, onRemoveCustom }) {
+function EnrichmentPills({
+  category,
+  selected,
+  onChange,
+  customFields,
+  onAddCustom,
+  onRemoveCustom,
+}) {
   const enrichments = ENRICHMENTS[category] || ENRICHMENTS.none;
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customValue, setCustomValue] = useState("");
@@ -505,8 +512,8 @@ function CreateWebTable({ apiKey, onSettings }) {
         if (row.hasOwnProperty("description") && r.highlights?.length) {
           row.description = r.highlights[0].slice(0, 300);
         }
-        if (row.hasOwnProperty("content") && r.text) {
-          row.content = r.text.slice(0, 280);
+        if (row.hasOwnProperty("content") && (r.text || r.highlights?.length)) {
+          row.content = (r.text || r.highlights[0]).slice(0, 280);
         }
         if (row.hasOwnProperty("source")) {
           try {
