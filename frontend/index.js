@@ -10,7 +10,6 @@ import {
   Label,
   Loader,
   Link,
-  Icon,
   SelectButtons,
   colors,
 } from "@airtable/blocks/ui";
@@ -23,7 +22,6 @@ import React, { useState, useCallback, useEffect, useRef } from "react";
 
 const EXA_API = "https://api.exa.ai";
 const INTEGRATION = "airtable";
-const BATCH_DELAY = 250;
 
 function exaHeaders(apiKey) {
   return {
@@ -54,14 +52,6 @@ function exaPost(endpoint, body, apiKey) {
   return exaFetch("POST", endpoint, apiKey, body);
 }
 
-function exaGet(endpoint, apiKey) {
-  return exaFetch("GET", endpoint, apiKey);
-}
-
-function exaDelete(endpoint, apiKey) {
-  return exaFetch("DELETE", endpoint, apiKey);
-}
-
 async function exaSearch(query, apiKey, opts = {}) {
   return exaPost(
     "/search",
@@ -79,47 +69,108 @@ async function exaSearch(query, apiKey, opts = {}) {
   );
 }
 
-const SCHEMA_ITEMS = {
-  company: {
-    name: { type: "string" },
-    website: { type: "string" },
-    short_description: { type: "string" },
-    category: { type: "string" },
-    headquarters: { type: "string" },
-    founded_year: { type: "number" },
-    employee_count: { type: "number" },
-    total_funding: { type: "string" },
-  },
-  news: {
-    title: { type: "string" },
-    source: { type: "string" },
-    url: { type: "string" },
-    published_date: { type: "string" },
-    summary: { type: "string" },
-  },
-  "research paper": {
-    title: { type: "string" },
-    authors: { type: "string" },
-    year: { type: "number" },
-    url: { type: "string" },
-    summary: { type: "string" },
-  },
-  tweet: {
-    author: { type: "string" },
-    handle: { type: "string" },
-    content: { type: "string" },
-    url: { type: "string" },
-    date: { type: "string" },
-  },
-  none: {
-    name: { type: "string" },
-    url: { type: "string" },
-    description: { type: "string" },
-  },
+// ---------------------------------------------------------------------------
+// Enrichment definitions
+// ---------------------------------------------------------------------------
+
+const ENRICHMENTS = {
+  company: [
+    { key: "short_description", label: "Short Description", type: "string", default: true },
+    { key: "category", label: "Category", type: "string", default: true },
+    { key: "headquarters", label: "Headquarters", type: "string", default: true },
+    { key: "founded_year", label: "Founded", type: "number", default: true },
+    { key: "employee_count", label: "Employee Count", type: "number", default: true },
+    { key: "total_funding", label: "Funding", type: "string", default: true },
+    { key: "revenue", label: "Revenue", type: "string", default: false },
+    { key: "ceo", label: "CEO", type: "string", default: false },
+    { key: "linkedin_url", label: "LinkedIn URL", type: "string", default: false },
+    { key: "industry", label: "Industry", type: "string", default: false },
+  ],
+  news: [
+    { key: "source", label: "Source", type: "string", default: true },
+    { key: "published_date", label: "Date", type: "string", default: true },
+    { key: "summary", label: "Summary", type: "string", default: true },
+    { key: "author_name", label: "Author", type: "string", default: false },
+    { key: "sentiment", label: "Sentiment", type: "string", default: false },
+  ],
+  "research paper": [
+    { key: "authors", label: "Authors", type: "string", default: true },
+    { key: "year", label: "Year", type: "number", default: true },
+    { key: "summary", label: "Summary", type: "string", default: true },
+    { key: "journal", label: "Journal", type: "string", default: false },
+    { key: "citation_count", label: "Citations", type: "number", default: false },
+  ],
+  tweet: [
+    { key: "handle", label: "Handle", type: "string", default: true },
+    { key: "content", label: "Content", type: "string", default: true },
+    { key: "date", label: "Date", type: "string", default: true },
+    { key: "likes", label: "Likes", type: "number", default: false },
+    { key: "retweets", label: "Retweets", type: "number", default: false },
+  ],
+  none: [
+    { key: "description", label: "Description", type: "string", default: true },
+    { key: "summary", label: "Summary", type: "string", default: false },
+  ],
 };
 
-function buildOutputSchema(categoryKey, count) {
-  const props = SCHEMA_ITEMS[categoryKey] || SCHEMA_ITEMS.none;
+const BASE_COLUMNS = {
+  company: [
+    { name: "Name", type: "singleLineText", key: "name" },
+    { name: "Website", type: "url", key: "website" },
+  ],
+  news: [
+    { name: "Title", type: "singleLineText", key: "title" },
+    { name: "URL", type: "url", key: "url" },
+  ],
+  "research paper": [
+    { name: "Title", type: "singleLineText", key: "title" },
+    { name: "URL", type: "url", key: "url" },
+  ],
+  tweet: [
+    { name: "Author", type: "singleLineText", key: "author" },
+    { name: "URL", type: "url", key: "url" },
+  ],
+  none: [
+    { name: "Name", type: "singleLineText", key: "name" },
+    { name: "URL", type: "url", key: "url" },
+  ],
+};
+
+function buildColumnsFromEnrichments(catKey, selectedKeys, customFields) {
+  const base = BASE_COLUMNS[catKey] || BASE_COLUMNS.none;
+  const enrichments = ENRICHMENTS[catKey] || ENRICHMENTS.none;
+  const enrichCols = enrichments
+    .filter((e) => selectedKeys.includes(e.key))
+    .map((e) => ({
+      name: e.label,
+      type: e.type === "number" ? "number" : e.type === "url" ? "url" : "singleLineText",
+      key: e.key,
+      ...(e.type === "number" ? { options: { precision: 0 } } : {}),
+    }));
+  const customCols = (customFields || []).map((cf) => ({
+    name: cf,
+    type: "singleLineText",
+    key: cf.toLowerCase().replace(/\s+/g, "_"),
+  }));
+  return [...base, ...enrichCols, ...customCols];
+}
+
+function buildSchemaFromEnrichments(catKey, selectedKeys, customFields, count) {
+  const enrichments = ENRICHMENTS[catKey] || ENRICHMENTS.none;
+  const base = BASE_COLUMNS[catKey] || BASE_COLUMNS.none;
+  const props = {};
+  for (const col of base) {
+    props[col.key] = { type: "string" };
+  }
+  for (const e of enrichments) {
+    if (selectedKeys.includes(e.key)) {
+      props[e.key] = { type: e.type === "number" ? "number" : "string" };
+    }
+  }
+  for (const cf of customFields || []) {
+    const cfKey = cf.toLowerCase().replace(/\s+/g, "_");
+    props[cfKey] = { type: "string" };
+  }
   return {
     type: "object",
     properties: {
@@ -127,73 +178,14 @@ function buildOutputSchema(categoryKey, count) {
         type: "array",
         description: `Return exactly ${count} distinct items. Do not merge or deduplicate.`,
         minItems: count,
-        items: {
-          type: "object",
-          properties: props,
-        },
+        items: { type: "object", properties: props },
       },
     },
   };
 }
 
-const TABLE_FIELDS = {
-  company: [
-    { name: "Name", type: "singleLineText", key: "name" },
-    { name: "Short Description", type: "singleLineText", key: "short_description" },
-    { name: "Category", type: "singleLineText", key: "category" },
-    { name: "Website", type: "url", key: "website" },
-    { name: "Headquarters", type: "singleLineText", key: "headquarters" },
-    { name: "Founded", type: "number", key: "founded_year", options: { precision: 0 } },
-    { name: "Employees", type: "number", key: "employee_count", options: { precision: 0 } },
-    { name: "Funding", type: "singleLineText", key: "total_funding" },
-  ],
-  news: [
-    { name: "Title", type: "singleLineText", key: "title" },
-    { name: "Source", type: "singleLineText", key: "source" },
-    { name: "URL", type: "url", key: "url" },
-    { name: "Date", type: "singleLineText", key: "published_date" },
-    { name: "Summary", type: "multilineText", key: "summary" },
-  ],
-  "research paper": [
-    { name: "Title", type: "singleLineText", key: "title" },
-    { name: "Authors", type: "singleLineText", key: "authors" },
-    { name: "Year", type: "number", key: "year", options: { precision: 0 } },
-    { name: "URL", type: "url", key: "url" },
-    { name: "Summary", type: "multilineText", key: "summary" },
-  ],
-  tweet: [
-    { name: "Author", type: "singleLineText", key: "author" },
-    { name: "Handle", type: "singleLineText", key: "handle" },
-    { name: "Content", type: "multilineText", key: "content" },
-    { name: "URL", type: "url", key: "url" },
-    { name: "Date", type: "singleLineText", key: "date" },
-  ],
-  none: [
-    { name: "Name", type: "singleLineText", key: "name" },
-    { name: "URL", type: "url", key: "url" },
-    { name: "Description", type: "multilineText", key: "description" },
-  ],
-};
-
-async function exaAnswer(query, apiKey, opts = {}) {
-  return exaPost(
-    "/answer",
-    {
-      query,
-      type: opts.type ?? "deep",
-    },
-    apiKey,
-  );
-}
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isoMonthsAgo(n) {
-  const d = new Date();
-  d.setMonth(d.getMonth() - n);
-  return d.toISOString().slice(0, 10);
 }
 
 // ---------------------------------------------------------------------------
@@ -205,7 +197,7 @@ function ApiKeySetup({ onSave }) {
   return (
     <Box padding={3} display="flex" flexDirection="column" alignItems="center">
       <Box marginBottom={3} display="flex" flexDirection="column" alignItems="center">
-        <Heading size="large">⚡ Exa for Airtable</Heading>
+        <Heading size="large">Exa for Airtable</Heading>
         <Text textColor="light" marginTop={1}>
           Web intelligence for your base
         </Text>
@@ -241,93 +233,186 @@ function ApiKeySetup({ onSave }) {
 }
 
 // ---------------------------------------------------------------------------
-// Tool Card
+// Enrichment Pill Selector
 // ---------------------------------------------------------------------------
 
-function ToolCard({ icon, title, description, tag, onClick }) {
+function EnrichmentPills({ category, selected, onChange, customFields, onAddCustom, onRemoveCustom }) {
+  const enrichments = ENRICHMENTS[category] || ENRICHMENTS.none;
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [customValue, setCustomValue] = useState("");
+
+  const toggle = (key) => {
+    if (selected.includes(key)) {
+      onChange(selected.filter((k) => k !== key));
+    } else {
+      onChange([...selected, key]);
+    }
+  };
+
+  const addCustom = () => {
+    const trimmed = customValue.trim();
+    if (trimmed && !customFields.includes(trimmed)) {
+      onAddCustom(trimmed);
+    }
+    setCustomValue("");
+    setShowCustomInput(false);
+  };
+
   return (
     <Box
-      as="button"
-      padding={2}
       marginBottom={2}
-      borderRadius="large"
+      padding={2}
       border="default"
-      width="100%"
-      display="flex"
-      alignItems="flex-start"
-      onClick={onClick}
-      style={{
-        cursor: "pointer",
-        background: "none",
-        textAlign: "left",
-        transition: "background 0.1s",
-      }}
-      className="tool-card"
+      borderRadius="default"
+      style={{ background: "#fafafa" }}
     >
-      <Text fontSize="24px" marginRight={2}>
-        {icon}
-      </Text>
-      <Box flex={1}>
-        <Box display="flex" alignItems="center">
-          <Text fontWeight="600">{title}</Text>
-          {tag && (
-            <Box marginLeft={1} paddingX={1} borderRadius="default" backgroundColor="#FFF3CD">
-              <Text fontSize="11px" textColor="#856404">
-                {tag}
-              </Text>
+      <Box display="flex" justifyContent="space-between" alignItems="center" marginBottom={1}>
+        <Text fontWeight="600" fontSize="13px">
+          Enrichments
+        </Text>
+        <Text fontSize="11px" textColor="light">
+          {selected.length + customFields.length} / row
+        </Text>
+      </Box>
+
+      <Box display="flex" flexWrap="wrap" style={{ gap: "6px" }}>
+        {enrichments.map((e) => {
+          const isSelected = selected.includes(e.key);
+          return (
+            <Box
+              key={e.key}
+              as="button"
+              onClick={() => toggle(e.key)}
+              paddingX={1}
+              paddingY="2px"
+              borderRadius="default"
+              style={{
+                border: isSelected ? "2px solid #2D7FF9" : "1px solid #ddd",
+                background: isSelected ? "#EBF3FE" : "#fff",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+                fontSize: "12px",
+                color: isSelected ? "#2D7FF9" : "#333",
+                fontWeight: isSelected ? 500 : 400,
+                fontFamily: "inherit",
+                lineHeight: "20px",
+              }}
+            >
+              {e.label}
+              {isSelected && (
+                <span style={{ fontSize: "10px", marginLeft: "2px" }}>{"\u00d7"}</span>
+              )}
             </Box>
-          )}
-        </Box>
-        <Text textColor="light" fontSize="12px" marginTop="2px">
-          {description}
-        </Text>
+          );
+        })}
+
+        {customFields.map((cf) => (
+          <Box
+            key={`custom-${cf}`}
+            as="button"
+            onClick={() => onRemoveCustom(cf)}
+            paddingX={1}
+            paddingY="2px"
+            borderRadius="default"
+            style={{
+              border: "2px solid #8B5CF6",
+              background: "#F3EEFF",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+              fontSize: "12px",
+              color: "#8B5CF6",
+              fontWeight: 500,
+              fontFamily: "inherit",
+              lineHeight: "20px",
+            }}
+          >
+            {cf}
+            <span style={{ fontSize: "10px", marginLeft: "2px" }}>{"\u00d7"}</span>
+          </Box>
+        ))}
+
+        {showCustomInput ? (
+          <Box display="flex" alignItems="center" style={{ gap: "4px" }}>
+            <input
+              autoFocus
+              placeholder="Field name"
+              value={customValue}
+              onChange={(e) => setCustomValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") addCustom();
+                if (e.key === "Escape") {
+                  setShowCustomInput(false);
+                  setCustomValue("");
+                }
+              }}
+              style={{
+                border: "1px solid #ddd",
+                borderRadius: "3px",
+                padding: "2px 6px",
+                fontSize: "12px",
+                width: "100px",
+                fontFamily: "inherit",
+                outline: "none",
+              }}
+            />
+            <Box
+              as="button"
+              onClick={addCustom}
+              style={{
+                border: "none",
+                background: "none",
+                cursor: "pointer",
+                fontSize: "14px",
+                color: "#2D7FF9",
+                padding: "0 2px",
+                fontFamily: "inherit",
+              }}
+            >
+              +
+            </Box>
+          </Box>
+        ) : (
+          <Box
+            as="button"
+            onClick={() => setShowCustomInput(true)}
+            paddingX={1}
+            paddingY="2px"
+            borderRadius="default"
+            style={{
+              border: "1px dashed #ccc",
+              background: "#fff",
+              cursor: "pointer",
+              fontSize: "12px",
+              color: "#666",
+              fontFamily: "inherit",
+              lineHeight: "20px",
+            }}
+          >
+            + Custom
+          </Box>
+        )}
       </Box>
     </Box>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Progress Bar
+// Create a Web Table
 // ---------------------------------------------------------------------------
 
-function ProgressBar({ current, total, label }) {
-  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-  return (
-    <Box marginY={2}>
-      <Box display="flex" justifyContent="space-between" marginBottom={1}>
-        <Text fontSize="12px" textColor="light">
-          {label}
-        </Text>
-        <Text fontSize="12px" textColor="light">
-          {pct}%
-        </Text>
-      </Box>
-      <Box
-        height="6px"
-        borderRadius="default"
-        backgroundColor={colors.GRAY_LIGHT_2}
-        overflow="hidden"
-      >
-        <Box
-          height="100%"
-          borderRadius="default"
-          backgroundColor={colors.BLUE}
-          style={{ width: `${pct}%`, transition: "width 0.3s" }}
-        />
-      </Box>
-    </Box>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Tool 1: Create a Web Table — /search deep → populate table
-// ---------------------------------------------------------------------------
-
-function CreateWebTable({ apiKey, onBack }) {
+function CreateWebTable({ apiKey, onSettings }) {
   const base = useBase();
   const [query, setQuery] = useState("");
   const [numResults, setNumResults] = useState(15);
   const [category, setCategory] = useState("company");
+  const [selectedEnrichments, setSelectedEnrichments] = useState(() =>
+    ENRICHMENTS.company.filter((e) => e.default).map((e) => e.key),
+  );
+  const [customFields, setCustomFields] = useState([]);
   const [rows, setRows] = useState([]);
   const [columns, setColumns] = useState([]);
   const [visibleCount, setVisibleCount] = useState(0);
@@ -337,6 +422,15 @@ function CreateWebTable({ apiKey, onBack }) {
   const [phase, setPhase] = useState("input");
   const [tableName, setTableName] = useState("");
   const revealTimer = useRef(null);
+
+  useEffect(() => {
+    const catKey = category === "none" ? "none" : category;
+    const defaults = (ENRICHMENTS[catKey] || ENRICHMENTS.none)
+      .filter((e) => e.default)
+      .map((e) => e.key);
+    setSelectedEnrichments(defaults);
+    setCustomFields([]);
+  }, [category]);
 
   useEffect(() => {
     if ((phase !== "results" && phase !== "enriching") || !rows.length) return;
@@ -354,6 +448,14 @@ function CreateWebTable({ apiKey, onBack }) {
     return () => clearInterval(revealTimer.current);
   }, [phase, rows.length]);
 
+  const addCustomField = useCallback((name) => {
+    setCustomFields((prev) => [...prev, name]);
+  }, []);
+
+  const removeCustomField = useCallback((name) => {
+    setCustomFields((prev) => prev.filter((f) => f !== name));
+  }, []);
+
   const search = useCallback(async () => {
     setLoading(true);
     setEnriching(false);
@@ -361,15 +463,14 @@ function CreateWebTable({ apiKey, onBack }) {
     setRows([]);
     setColumns([]);
     setVisibleCount(0);
-    const schemaKey = category === "none" ? "none" : category;
-    const fieldDefs = TABLE_FIELDS[schemaKey] || TABLE_FIELDS.none;
+    const catKey = category === "none" ? "none" : category;
+    const fieldDefs = buildColumnsFromEnrichments(catKey, selectedEnrichments, customFields);
     setColumns(fieldDefs);
     setPhase("searching");
     let localPhase = "searching";
     let hasPhase1Results = false;
 
     try {
-      // Phase 1: Fast search to get titles/URLs quickly
       const fastResult = await exaSearch(query, apiKey, {
         numResults,
         type: "auto",
@@ -385,13 +486,11 @@ function CreateWebTable({ apiKey, onBack }) {
         return;
       }
 
-      // Build initial rows from fast results
       const initialRows = fastResults.map((r) => {
         const row = {};
         for (const col of fieldDefs) {
           row[col.key] = null;
         }
-        // Fill what we know from the fast search
         if (row.hasOwnProperty("name")) row.name = r.title || "";
         if (row.hasOwnProperty("title")) row.title = r.title || "";
         if (row.hasOwnProperty("author")) row.author = r.author || "";
@@ -433,10 +532,8 @@ function CreateWebTable({ apiKey, onBack }) {
       setLoading(false);
       setEnriching(true);
 
-      // Phase 2: Deep search with outputSchema for enrichment
-      // Build a targeted query that names the exact entities from Phase 1
       const entityNames = fastResults
-        .map((r) => (r.title || "").replace(/\s*[-|–—].*/g, "").trim())
+        .map((r) => (r.title || "").replace(/\s*[-|\u2013\u2014].*/g, "").trim())
         .filter(Boolean);
       const domains = [];
       for (const r of fastResults) {
@@ -451,7 +548,12 @@ function CreateWebTable({ apiKey, onBack }) {
         entityNames.length > 0
           ? `${query}. Focus on these specific entities: ${entityNames.join(", ")}`
           : query;
-      const schema = buildOutputSchema(schemaKey, numResults);
+      const schema = buildSchemaFromEnrichments(
+        catKey,
+        selectedEnrichments,
+        customFields,
+        numResults,
+      );
       const deepResult = await exaSearch(deepQuery, apiKey, {
         numResults: Math.max(numResults * 2, 20),
         type: "deep",
@@ -488,7 +590,7 @@ function CreateWebTable({ apiKey, onBack }) {
       }
     }
     setLoading(false);
-  }, [query, numResults, category, apiKey]);
+  }, [query, numResults, category, apiKey, selectedEnrichments, customFields]);
 
   const writeToBase = useCallback(async () => {
     if (!rows.length || !columns.length) return;
@@ -534,16 +636,18 @@ function CreateWebTable({ apiKey, onBack }) {
 
   return (
     <Box padding={3}>
-      <Button icon="chevronLeft" variant="secondary" size="small" onClick={onBack} marginBottom={2}>
-        Back
-      </Button>
-
-      <Heading size="small" marginBottom={1}>
-        🌐 Create a Web Table
-      </Heading>
+      <Box display="flex" justifyContent="space-between" alignItems="center" marginBottom={1}>
+        <Heading size="small">Create a Web Table</Heading>
+        <Button
+          variant="secondary"
+          size="small"
+          icon="cog"
+          onClick={onSettings}
+          aria-label="Settings"
+        />
+      </Box>
       <Text textColor="light" marginBottom={2}>
-        Exa will search the web to find companies and enrich them with leadership, headcount,
-        funding, news, and more.
+        Search the web to find companies, people, or data and populate a new table.
       </Text>
 
       <Label htmlFor="query-input">What are you looking for?</Label>
@@ -555,7 +659,7 @@ function CreateWebTable({ apiKey, onBack }) {
         marginBottom={2}
       />
 
-      <Label htmlFor="category-select">Category filter</Label>
+      <Label htmlFor="category-select">Category</Label>
       <SelectButtons
         id="category-select"
         value={category}
@@ -569,6 +673,15 @@ function CreateWebTable({ apiKey, onBack }) {
         ]}
         marginBottom={2}
         width="100%"
+      />
+
+      <EnrichmentPills
+        category={category === "none" ? "none" : category}
+        selected={selectedEnrichments}
+        onChange={setSelectedEnrichments}
+        customFields={customFields}
+        onAddCustom={addCustomField}
+        onRemoveCustom={removeCustomField}
       />
 
       <Label htmlFor="num-input">Number of results</Label>
@@ -586,6 +699,7 @@ function CreateWebTable({ apiKey, onBack }) {
         onClick={search}
         disabled={!query.trim() || loading}
         marginBottom={2}
+        width="100%"
       >
         {loading ? <Loader scale={0.2} /> : "Search the Web"}
       </Button>
@@ -601,7 +715,7 @@ function CreateWebTable({ apiKey, onBack }) {
           <Box marginTop={2}>
             {(phase === "results" || phase === "enriching") && rows.length > 0 && (
               <Heading size="xsmall" marginBottom={1}>
-                Found {rows.length} results{enriching ? " — enriching..." : ""}
+                Found {rows.length} results{enriching ? " \u2014 enriching..." : ""}
               </Heading>
             )}
             {phase === "searching" && (
@@ -616,7 +730,7 @@ function CreateWebTable({ apiKey, onBack }) {
               <Box display="flex" alignItems="center" marginBottom={1}>
                 <Loader scale={0.3} />
                 <Text marginLeft={2} textColor="light" fontSize="13px">
-                  Enriching with deep search...
+                  Enriching with details...
                 </Text>
               </Box>
             )}
@@ -784,450 +898,8 @@ function CreateWebTable({ apiKey, onBack }) {
       {phase === "done" && (
         <Box padding={2} borderRadius="default" backgroundColor="#D1FAE5" marginTop={2}>
           <Text textColor="#065F46">
-            ✅ Created table &quot;{tableName}&quot; with {rows.length} records!
+            Created table &quot;{tableName}&quot; with {rows.length} records!
           </Text>
-        </Box>
-      )}
-    </Box>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Tool 2: News Monitor — /search news category → fill News Updates table
-// ---------------------------------------------------------------------------
-
-// Monitors API helpers
-async function createMonitor(query, numResults, apiKey, opts = {}) {
-  const body = {
-    name: opts.name || query.slice(0, 80),
-    search: {
-      query,
-      numResults,
-      contents: { text: { maxCharacters: 800 }, highlights: true },
-    },
-    webhook: { url: "https://httpbin.org/post" }, // placeholder, we poll instead
-  };
-  if (opts.cron) {
-    body.trigger = {
-      type: "cron",
-      expression: opts.cron,
-      timezone: opts.timezone || "America/Los_Angeles",
-    };
-  }
-  return exaPost("/search-monitors", body, apiKey);
-}
-
-async function triggerMonitor(monitorId, apiKey) {
-  return exaPost(`/search-monitors/${monitorId}/trigger`, {}, apiKey);
-}
-
-async function pollMonitorRun(monitorId, apiKey, maxWait = 60000) {
-  const start = Date.now();
-  while (Date.now() - start < maxWait) {
-    const runs = await exaGet(`/search-monitors/${monitorId}/runs`, apiKey);
-    if (runs.data?.length > 0) {
-      const latest = runs.data[0];
-      if (latest.status === "completed") {
-        return await exaGet(`/search-monitors/${monitorId}/runs/${latest.id}`, apiKey);
-      }
-      if (latest.status === "failed") {
-        throw new Error(`Monitor run failed: ${latest.error || "unknown"}`);
-      }
-    }
-    await sleep(2000);
-  }
-  throw new Error("Monitor run timed out after 60s");
-}
-
-async function deleteMonitor(monitorId, apiKey) {
-  return exaDelete(`/search-monitors/${monitorId}`, apiKey);
-}
-
-function NewsMonitor({ apiKey, onBack }) {
-  const base = useBase();
-  const [topics, setTopics] = useState("");
-  const [numPerTopic, setNumPerTopic] = useState(5);
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState({ current: 0, total: 0, label: "" });
-  const [error, setError] = useState(null);
-  const [phase, setPhase] = useState("input");
-  const [tableName, setTableName] = useState("");
-  const [mode, setMode] = useState("once"); // 'once' or 'recurring'
-  const [cronExpr, setCronExpr] = useState("0 9 * * *");
-  const [createdMonitors, setCreatedMonitors] = useState([]);
-
-  const searchNews = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setResults([]);
-    setPhase("input");
-
-    const topicList = topics
-      .split("\n")
-      .map((t) => t.trim())
-      .filter(Boolean);
-    if (!topicList.length) {
-      setError("Enter at least one topic/company name.");
-      setLoading(false);
-      return;
-    }
-
-    setProgress({ current: 0, total: topicList.length, label: "Creating monitors..." });
-    const allResults = [];
-    const monitors = [];
-
-    try {
-      for (let i = 0; i < topicList.length; i++) {
-        const topic = topicList[i];
-        setProgress({
-          current: i + 1,
-          total: topicList.length,
-          label: `${topic} — creating monitor`,
-        });
-
-        // Create a monitor for this topic
-        const monitor = await createMonitor(
-          `${topic} latest news`,
-          numPerTopic,
-          apiKey,
-          mode === "recurring"
-            ? { cron: cronExpr, name: `News: ${topic}` }
-            : { name: `News: ${topic}` },
-        );
-        monitors.push({ id: monitor.id, topic });
-
-        // Trigger immediately and poll for results
-        setProgress({ current: i + 1, total: topicList.length, label: `${topic} — searching...` });
-        await triggerMonitor(monitor.id, apiKey);
-        const run = await pollMonitorRun(monitor.id, apiKey);
-
-        if (run.output?.results?.length > 0) {
-          for (const r of run.output.results) {
-            allResults.push({
-              Topic: topic,
-              Title: r.title || "",
-              URL: r.url || "",
-              Published: r.publishedDate || "",
-              Highlight: r.highlights?.[0] || r.text?.slice(0, 200) || "",
-            });
-          }
-        }
-
-        // Clean up one-off monitors
-        if (mode === "once") {
-          await deleteMonitor(monitor.id, apiKey).catch(() => {});
-        }
-
-        await sleep(BATCH_DELAY);
-      }
-
-      if (mode === "recurring") {
-        setCreatedMonitors(monitors);
-      }
-
-      setResults(allResults);
-      setPhase("results");
-      setTableName(`News ${new Date().toISOString().slice(0, 10)}`);
-    } catch (err) {
-      setError(err.message);
-      if (allResults.length > 0) {
-        setResults(allResults);
-        setPhase("results");
-        setTableName(`News ${new Date().toISOString().slice(0, 10)}`);
-      }
-      for (const m of monitors) {
-        await deleteMonitor(m.id, apiKey).catch(() => {});
-      }
-    }
-    setLoading(false);
-  }, [topics, numPerTopic, apiKey, mode, cronExpr]);
-
-  const writeToBase = useCallback(async () => {
-    if (!results.length) return;
-    setLoading(true);
-    setError(null);
-
-    try {
-      const name = tableName || `News ${new Date().toISOString().slice(0, 10)}`;
-
-      const fields = [
-        { name: "Topic", type: "singleLineText" },
-        { name: "Title", type: "singleLineText" },
-        { name: "URL", type: "url" },
-        { name: "Published", type: "singleLineText" },
-        { name: "Highlight", type: "multilineText" },
-      ];
-
-      const newTable = await base.createTableAsync(name, fields);
-
-      const recordDefs = results.map((row) => ({
-        fields: {
-          Topic: row.Topic || "",
-          Title: row.Title || "",
-          URL: row.URL || "",
-          Published: row.Published || "",
-          Highlight: row.Highlight || "",
-        },
-      }));
-
-      for (let i = 0; i < recordDefs.length; i += 50) {
-        await newTable.createRecordsAsync(recordDefs.slice(i, i + 50));
-      }
-
-      setPhase("done");
-    } catch (err) {
-      setError(err.message);
-    }
-    setLoading(false);
-  }, [results, tableName, base]);
-
-  return (
-    <Box padding={3}>
-      <Button icon="chevronLeft" variant="secondary" size="small" onClick={onBack} marginBottom={2}>
-        Back
-      </Button>
-
-      <Heading size="small" marginBottom={1}>
-        📰 News Monitor
-      </Heading>
-      <Text textColor="light" marginBottom={2}>
-        Exa will search for recent news about your topics and populate a table.
-      </Text>
-
-      <Label htmlFor="topics-input">Topics / companies (one per line)</Label>
-      <textarea
-        id="topics-input"
-        placeholder={"OpenAI\nAnthropic\nGoogle DeepMind"}
-        value={topics}
-        onChange={(e) => setTopics(e.target.value)}
-        rows={4}
-        style={{
-          width: "100%",
-          padding: "8px",
-          borderRadius: "4px",
-          border: "1px solid #ccc",
-          fontFamily: "inherit",
-          fontSize: "13px",
-          marginBottom: "8px",
-          resize: "vertical",
-        }}
-      />
-
-      <Box display="flex" marginBottom={2}>
-        <Box marginRight={2}>
-          <Label htmlFor="num-per-topic">Results per topic</Label>
-          <Input
-            id="num-per-topic"
-            type="number"
-            value={String(numPerTopic)}
-            onChange={(e) => setNumPerTopic(parseInt(e.target.value) || 5)}
-            width="80px"
-          />
-        </Box>
-      </Box>
-
-      <Box marginBottom={2}>
-        <Label>Mode</Label>
-        <Box display="flex" marginTop={1}>
-          <Button
-            variant={mode === "once" ? "primary" : "secondary"}
-            size="small"
-            onClick={() => setMode("once")}
-            marginRight={1}
-          >
-            One-time search
-          </Button>
-          <Button
-            variant={mode === "recurring" ? "primary" : "secondary"}
-            size="small"
-            onClick={() => setMode("recurring")}
-          >
-            Recurring monitor
-          </Button>
-        </Box>
-        {mode === "recurring" && (
-          <Box marginTop={1}>
-            <Label htmlFor="cron-input">Cron schedule</Label>
-            <Input
-              id="cron-input"
-              placeholder="0 9 * * *"
-              value={cronExpr}
-              onChange={(e) => setCronExpr(e.target.value)}
-              width="200px"
-            />
-            <Text fontSize="11px" textColor="light" marginTop="2px">
-              Default: daily at 9am PT. Uses standard cron syntax.
-            </Text>
-          </Box>
-        )}
-      </Box>
-
-      <Button
-        variant="primary"
-        onClick={searchNews}
-        disabled={!topics.trim() || loading}
-        marginBottom={2}
-      >
-        {loading && phase === "input" ? <Loader scale={0.2} /> : "Search News"}
-      </Button>
-
-      {loading && progress.total > 0 && (
-        <ProgressBar current={progress.current} total={progress.total} label={progress.label} />
-      )}
-
-      {error && (
-        <Box padding={2} borderRadius="default" backgroundColor="#FEE2E2" marginBottom={2}>
-          <Text textColor="#991B1B">{error}</Text>
-        </Box>
-      )}
-
-      {phase === "results" && results.length > 0 && (
-        <Box marginTop={2}>
-          <Heading size="xsmall" marginBottom={1}>
-            Found {results.length} articles
-          </Heading>
-
-          <Box
-            border="default"
-            borderRadius="default"
-            overflow="auto"
-            maxHeight="300px"
-            marginBottom={2}
-          >
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
-              <thead>
-                <tr style={{ borderBottom: "1px solid #ddd", background: "#f9f9f9" }}>
-                  <th style={{ padding: "6px 8px", textAlign: "left" }}>Topic</th>
-                  <th style={{ padding: "6px 8px", textAlign: "left" }}>Title</th>
-                  <th style={{ padding: "6px 8px", textAlign: "left" }}>Published</th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.map((row, i) => (
-                  <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
-                    <td style={{ padding: "6px 8px" }}>{row.Topic}</td>
-                    <td style={{ padding: "6px 8px" }}>
-                      <Link href={row.URL} target="_blank" style={{ fontSize: "11px" }}>
-                        {row.Title?.slice(0, 60)}
-                      </Link>
-                    </td>
-                    <td style={{ padding: "6px 8px", fontSize: "11px" }}>
-                      {row.Published?.slice(0, 10)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Box>
-
-          <Box display="flex" alignItems="center">
-            <Input
-              placeholder="Table name"
-              value={tableName}
-              onChange={(e) => setTableName(e.target.value)}
-              flex={1}
-              marginRight={1}
-            />
-            <Button variant="primary" onClick={writeToBase} disabled={loading}>
-              Create Table
-            </Button>
-          </Box>
-        </Box>
-      )}
-
-      {phase === "done" && (
-        <Box padding={2} borderRadius="default" backgroundColor="#D1FAE5" marginTop={2}>
-          <Text textColor="#065F46">
-            ✅ Created table &quot;{tableName}&quot; with {results.length} records!
-          </Text>
-        </Box>
-      )}
-    </Box>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Tool 3: Generate Report — /answer deep
-// ---------------------------------------------------------------------------
-
-function GenerateReport({ apiKey, onBack }) {
-  const [query, setQuery] = useState("");
-  const [report, setReport] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  const generate = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setReport(null);
-    try {
-      const result = await exaAnswer(query, apiKey, { type: "deep" });
-      setReport({
-        answer: result.answer,
-        citations: result.citations || [],
-      });
-    } catch (err) {
-      setError(err.message);
-    }
-    setLoading(false);
-  }, [query, apiKey]);
-
-  return (
-    <Box padding={3}>
-      <Button icon="chevronLeft" variant="secondary" size="small" onClick={onBack} marginBottom={2}>
-        Back
-      </Button>
-
-      <Heading size="small" marginBottom={1}>
-        📄 Generate a Report
-      </Heading>
-      <Text textColor="light" marginBottom={2}>
-        Exa will search the web and write a long-form summary, analysis, or overview.
-      </Text>
-
-      <Input
-        placeholder='e.g. "Competitive landscape of AI search engines in 2025"'
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        marginBottom={2}
-      />
-
-      <Button
-        variant="primary"
-        onClick={generate}
-        disabled={!query.trim() || loading}
-        marginBottom={2}
-      >
-        {loading ? <Loader scale={0.2} /> : "Generate Report"}
-      </Button>
-
-      {error && (
-        <Box padding={2} borderRadius="default" backgroundColor="#FEE2E2" marginBottom={2}>
-          <Text textColor="#991B1B">{error}</Text>
-        </Box>
-      )}
-
-      {report && (
-        <Box marginTop={2}>
-          <Box padding={3} border="default" borderRadius="large" marginBottom={2}>
-            <Text style={{ whiteSpace: "pre-wrap", lineHeight: "1.6" }}>{report.answer}</Text>
-          </Box>
-
-          {report.citations.length > 0 && (
-            <Box>
-              <Heading size="xsmall" marginBottom={1}>
-                Sources ({report.citations.length})
-              </Heading>
-              {report.citations.map((c, i) => (
-                <Box key={i} marginBottom={1}>
-                  <Link href={c.url} target="_blank" fontSize="12px">
-                    {c.title || c.url}
-                  </Link>
-                </Box>
-              ))}
-            </Box>
-          )}
         </Box>
       )}
     </Box>
@@ -1240,7 +912,6 @@ function GenerateReport({ apiKey, onBack }) {
 
 function ExaApp() {
   const globalConfig = useGlobalConfig();
-  const [activeTool, setActiveTool] = useState(null);
 
   const apiKey = globalConfig.get("exaApiKey");
 
@@ -1257,70 +928,13 @@ function ExaApp() {
     if (globalConfig.checkPermissionsForSet("exaApiKey").hasPermission) {
       await globalConfig.setAsync("exaApiKey", "");
     }
-    setActiveTool(null);
   }, [globalConfig]);
 
   if (!apiKey) {
     return <ApiKeySetup onSave={saveApiKey} />;
   }
 
-  if (activeTool) {
-    const tools = {
-      webTable: CreateWebTable,
-      news: NewsMonitor,
-      report: GenerateReport,
-    };
-    const ToolComponent = tools[activeTool];
-    return <ToolComponent apiKey={apiKey} onBack={() => setActiveTool(null)} />;
-  }
-
-  return (
-    <Box padding={3}>
-      <Box display="flex" justifyContent="space-between" alignItems="center" marginBottom={1}>
-        <Heading>⚡ Exa</Heading>
-        <Button
-          variant="secondary"
-          size="small"
-          icon="cog"
-          onClick={clearApiKey}
-          aria-label="Settings"
-        />
-      </Box>
-      <Text textColor="light" marginBottom={3}>
-        Web intelligence for your base
-      </Text>
-
-      <ToolCard
-        icon="🌐"
-        title="Create a web table"
-        tag="Exa Search"
-        description="Search the web to find companies, people, or data and populate a new table."
-        onClick={() => setActiveTool("webTable")}
-      />
-      <ToolCard
-        icon="📰"
-        title="News monitor"
-        description="Find recent news articles about topics or companies and create a news table."
-        onClick={() => setActiveTool("news")}
-      />
-      <ToolCard
-        icon="📄"
-        title="Generate a report"
-        description="Research the web and write a long-form summary, analysis, or overview."
-        onClick={() => setActiveTool("report")}
-      />
-
-      <Box marginTop={3} display="flex" justifyContent="center">
-        <Text fontSize="11px" textColor="light">
-          Powered by{" "}
-          <Link href="https://exa.ai" target="_blank">
-            Exa
-          </Link>{" "}
-          — the search engine for AI
-        </Text>
-      </Box>
-    </Box>
-  );
+  return <CreateWebTable apiKey={apiKey} onSettings={clearApiKey} />;
 }
 
 initializeBlock(() => <ExaApp />);
